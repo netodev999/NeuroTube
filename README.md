@@ -258,7 +258,7 @@ apksigner verify --print-certs NeuroTube-vX.Y.Z-universal.apk
 The certificate's SHA-256 fingerprint is:
 
 ```
-DF:F2:DC:23:A3:59:FA:73:2E:7C:38:C2:26:E4:C0:2F:7C:BE:21:9E:C6:C9:F7:FC:A7:E6:14:07:05:57:58:99
+6A:3A:00:29:91:C7:31:EF:E3:33:DF:DD:8B:9B:01:B5:39:F5:8C:12:B9:90:A6:93:90:6E:CB:56:27:67:FB:A4
 ```
 
 ---
@@ -303,7 +303,7 @@ the build still succeeds but produces an **unsigned** APK.
 ```properties
 # key.properties  (never commit this file)
 storePassword=…
-keyAlias=flowtube
+keyAlias=neurotube
 keyPassword=…
 ```
 
@@ -312,7 +312,7 @@ update to an installed user again:
 
 ```bash
 keytool -genkeypair -v \
-  -keystore release.keystore -storetype PKCS12 -alias flowtube \
+  -keystore release.keystore -storetype PKCS12 -alias neurotube \
   -keyalg RSA -keysize 4096 -sigalg SHA384withRSA -validity 10000
 ```
 
@@ -345,7 +345,7 @@ Actions):
 | :--- | :--- |
 | `RELEASE_KEYSTORE_BASE64` | `base64 -w0 release.keystore` |
 | `STORE_PASSWORD` | keystore password |
-| `KEY_ALIAS` | `flowtube` |
+| `KEY_ALIAS` | `neurotube` |
 | `KEY_PASSWORD` | key password |
 | `LASTFM_API_KEY` | *(optional)* Last.fm API key |
 | `LASTFM_API_SECRET` | *(optional)* Last.fm API secret |
