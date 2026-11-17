@@ -18,6 +18,8 @@ data class MusicShelfRenderer(
         // A signed-in library now answers a shelf with lockup rows, as the grid does.
         val lockupViewModel: JsonObject? = null,
         val continuationItemRenderer: ContinuationItemRenderer? = null,
+        // The modern next-page token, as in [GridRenderer.Item].
+        val continuationItemViewModel: JsonObject? = null,
         // A section item can itself be a grid, which is how some libraries return their saved
         // playlists and albums.
         val gridRenderer: GridRenderer? = null,
@@ -66,9 +68,12 @@ data class MusicShelfRenderer(
 
 fun List<MusicShelfRenderer.Content>.getItems(): List<MusicResponsiveListItemRenderer> = mapNotNull { it.musicResponsiveListItemRenderer }
 
+/** The next-page token of a shelf: the older `continuationItemRenderer`, or the modern view model. */
 fun List<MusicShelfRenderer.Content>.getContinuation(): String? =
-    firstOrNull { it.continuationItemRenderer != null }
-        ?.continuationItemRenderer
-        ?.continuationEndpoint
-        ?.continuationCommand
-        ?.token
+    firstNotNullOfOrNull { content ->
+        content.continuationItemRenderer
+            ?.continuationEndpoint
+            ?.continuationCommand
+            ?.token
+            ?: content.continuationItemViewModel?.continuationItemViewModelToken()
+    }

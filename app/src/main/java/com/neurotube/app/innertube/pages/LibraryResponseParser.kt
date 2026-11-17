@@ -5,6 +5,7 @@ import com.neurotube.app.innertube.models.MusicPlaylistShelfRenderer
 import com.neurotube.app.innertube.models.MusicShelfRenderer
 import com.neurotube.app.innertube.models.SectionListRenderer
 import com.neurotube.app.innertube.models.YTItem
+import com.neurotube.app.innertube.models.continuationItemViewModelToken
 import com.neurotube.app.innertube.models.getContinuation
 import com.neurotube.app.innertube.models.response.BrowseResponse
 
@@ -48,21 +49,25 @@ object LibraryResponseParser {
     }
 
     /**
-     * The token on the section list itself, when the page carries exactly one section.
+     * The token on the section list itself, when the page carries exactly one list-bearing section.
      *
      * A single-section library page — every `FEmusic_liked_*` page is one — hangs the next-page
      * token off the section list rather than the grid or shelf inside it. That token is then
      * unambiguously this section's, so it is taken as a fallback; without it the library renders
-     * only its first page. With more than one section the token belongs to the list as a whole and
-     * must not be attributed to the first one.
+     * only its first page. With more than one list-bearing section the token belongs to the list as
+     * a whole and must not be attributed to the first one.
      */
     private fun sectionToken(
         response: BrowseResponse,
         tabIndex: Int,
     ): String? {
         val sectionList = sectionList(response, tabIndex) ?: return null
-        if (sectionList.contents?.size != 1) return null
+        val contents = sectionList.contents.orEmpty()
+        // A modern page closes the list with a bare continuation item; that is not a section of its
+        // own, so it must not count as a second one.
+        if (contents.count { it.continuationItemViewModel == null } != 1) return null
         return sectionList.continuations?.getContinuation()
+            ?: contents.firstNotNullOfOrNull { it.continuationItemViewModel?.continuationItemViewModelToken() }
     }
 
     /**
@@ -194,15 +199,20 @@ object LibraryResponseParser {
     /**
      * The token a modern library grid appends as its last item, or null when it carries none.
      *
-     * A grid can hand out its next page either through `continuations` or by appending a bare
-     * `continuationItemRenderer` to `items`; this reads the latter.
+     * A grid can hand out its next page either through `continuations`, by appending a bare
+     * `continuationItemRenderer`, or — as the library now does — by appending a
+     * `continuationItemViewModel`. Reading only the first two lost the token, so a liked-songs grid
+     * longer than one page imported just its first slice.
      */
     private fun List<GridRenderer.Item>.trailingContinuation(): String? =
         lastOrNull()
-            ?.continuationItemRenderer
-            ?.continuationEndpoint
-            ?.continuationCommand
-            ?.token
+            ?.let { item ->
+                item.continuationItemRenderer
+                    ?.continuationEndpoint
+                    ?.continuationCommand
+                    ?.token
+                    ?: item.continuationItemViewModel?.continuationItemViewModelToken()
+            }
 
     /** One slice of a library: its items, and the token to continue from when it has no own token. */
     private fun fromSlice(

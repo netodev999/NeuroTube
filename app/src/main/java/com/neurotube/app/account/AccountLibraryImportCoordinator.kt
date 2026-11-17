@@ -199,7 +199,6 @@ class AccountLibraryImportCoordinator
                 report.albums,
                 report.videoPlaylists,
                 report.watchLater,
-                report.history,
             )
     }
 

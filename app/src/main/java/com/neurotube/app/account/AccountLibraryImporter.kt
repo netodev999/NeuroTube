@@ -8,7 +8,6 @@ import com.neurotube.app.data.engagement.FeedInvalidationBus
 import com.neurotube.app.data.local.LikedVideosRepository
 import com.neurotube.app.data.local.PlaylistRepository
 import com.neurotube.app.data.local.SubscriptionRepository
-import com.neurotube.app.data.local.ViewHistory
 import com.neurotube.app.data.model.Channel
 import com.neurotube.app.data.model.Video
 import com.neurotube.app.data.music.YouTubeMusicService
@@ -59,7 +58,6 @@ enum class AccountImportStep {
     ALBUMS,
     VIDEO_PLAYLISTS,
     WATCH_LATER,
-    HISTORY,
 }
 
 /** The string that names one part of an import, shared by the page and the progress notification. */
@@ -73,7 +71,6 @@ internal fun AccountImportStep.titleRes(): Int =
         AccountImportStep.ALBUMS -> R.string.youtube_account_import_step_albums
         AccountImportStep.VIDEO_PLAYLISTS -> R.string.youtube_account_import_step_video_playlists
         AccountImportStep.WATCH_LATER -> R.string.youtube_account_import_step_watch_later
-        AccountImportStep.HISTORY -> R.string.youtube_account_import_step_history
     }
 
 /** Progress through an import, so the screen can say what it is doing. */
@@ -115,7 +112,6 @@ class AccountLibraryImport
         private val subscriptions: SubscriptionRepository,
         private val likedVideos: LikedVideosRepository,
         private val musicPlaylists: PlaylistRepository,
-        private val viewHistory: ViewHistory,
     ) {
         /**
          * Reads the account's library and stores it. [onProgress] is called as each part begins and,
@@ -184,15 +180,6 @@ class AccountLibraryImport
                     runCatching { watchLater.forEach { video -> musicPlaylists.addToWatchLater(video) } }
                         .onSuccess { report = report.copy(watchLater = watchLater.size) }
                         .onFailure { Log.w(TAG, "Importing Watch Later failed", it) }
-                }
-
-                onProgress(AccountImportState.Running(AccountImportStep.HISTORY))
-                val watched = fetchPart(AccountImportStep.HISTORY, steps) { fetchWatchHistory() }
-                if (watched.isNotEmpty()) {
-                    runCatching {
-                        viewHistory.bulkSaveHistoryEntries(watched.toHistoryEntries(System.currentTimeMillis()))
-                    }.onSuccess { report = report.copy(history = watched.size) }
-                        .onFailure { Log.w(TAG, "Importing watch history failed", it) }
                 }
 
                 seedFeedFromImport(report)
@@ -284,33 +271,6 @@ class AccountLibraryImport
                     val page = result.getOrThrow()
                     ImportDiagnostics.record(
                         "watchLater page ${pages + 1}: videos=${page.videos.size} next=${page.continuation != null}",
-                    )
-                    all += page.videos
-                    continuation = page.continuation
-                    pages++
-                } while (continuation != null && pages < MAX_CHANNEL_PAGES)
-
-                all.distinctBy { it.id }
-            }
-
-        /** The account's watch history, paged to the end. */
-        private suspend fun fetchWatchHistory(): List<Video> =
-            withContext(Dispatchers.IO) {
-                val all = mutableListOf<Video>()
-                var continuation: String? = null
-                var pages = 0
-                do {
-                    val result = YouTube.accountWatchHistory(continuation)
-                    if (result.isFailure) {
-                        ImportDiagnostics.record(
-                            "history page ${pages + 1}: FAILED ${describeFailure(result.exceptionOrNull()!!)}",
-                        )
-                        if (continuation == null) throw result.exceptionOrNull()!!
-                        break
-                    }
-                    val page = result.getOrThrow()
-                    ImportDiagnostics.record(
-                        "history page ${pages + 1}: videos=${page.videos.size} next=${page.continuation != null}",
                     )
                     all += page.videos
                     continuation = page.continuation

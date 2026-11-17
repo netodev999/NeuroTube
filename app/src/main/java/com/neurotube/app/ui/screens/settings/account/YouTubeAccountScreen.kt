@@ -354,5 +354,4 @@ private fun importSummary(report: AccountImportReport): String =
         report.albums,
         report.videoPlaylists,
         report.watchLater,
-        report.history,
     )

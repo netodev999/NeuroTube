@@ -3,6 +3,7 @@ package com.neurotube.app.innertube.models
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonNames
+import kotlinx.serialization.json.JsonObject
 
 @Serializable
 data class SectionListRenderer(
@@ -48,6 +49,9 @@ data class SectionListRenderer(
         val musicEditablePlaylistDetailHeaderRenderer: MusicEditablePlaylistDetailHeaderRenderer? = null,
         val gridRenderer: GridRenderer? = null,
         val itemSectionRenderer: ItemSectionRenderer? = null,
+        // A modern section list closes with a `continuationItemViewModel` in place of the older
+        // `continuationItemRenderer`, carrying the next-page token for the list as a whole.
+        val continuationItemViewModel: JsonObject? = null,
     )
 
     @Serializable

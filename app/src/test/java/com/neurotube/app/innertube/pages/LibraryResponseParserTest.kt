@@ -910,4 +910,137 @@ class LibraryResponseParserTest {
         assertEquals("Daft Punk", song.artists.single().name)
         assertEquals("UCRr1xG", song.artists.single().id)
     }
+
+    @Test
+    fun `a liked-songs grid whose next token is a modern continuation item keeps it`() {
+        val page =
+            LibraryResponseParser.pageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "contents":{"singleColumnBrowseResultsRenderer":{"tabs":[
+                       {"tabRenderer":{"content":{"sectionListRenderer":{
+                         "contents":[{"gridRenderer":{"items":[
+                           ${songRow("v1", "One")},
+                           {"continuationItemViewModel":{"continuationCommand":{"token":"PAGE2"}}}
+                         ]}}]
+                       }}}}
+                     ]}}}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals("the first page is read whole", 1, page.items.size)
+        assertEquals(
+            "a grid that closes with a continuationItemViewModel must still hand out its next token",
+            "PAGE2",
+            page.continuation,
+        )
+    }
+
+    @Test
+    fun `a liked-songs grid whose token nests under innertubeCommand keeps it`() {
+        val page =
+            LibraryResponseParser.pageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "contents":{"singleColumnBrowseResultsRenderer":{"tabs":[
+                       {"tabRenderer":{"content":{"sectionListRenderer":{
+                         "contents":[{"gridRenderer":{"items":[
+                           ${songRow("v1", "One")},
+                           {"continuationItemViewModel":{"continuationCommand":{
+                             "innertubeCommand":{"continuationCommand":{"token":"PAGE2"}}
+                           }}}
+                         ]}}]
+                       }}}}
+                     ]}}}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals("PAGE2", page.continuation)
+    }
+
+    @Test
+    fun `a liked-songs shelf continuation whose token is a modern item keeps it`() {
+        val page =
+            LibraryResponseParser.continuationPageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "continuationContents":{"musicPlaylistShelfContinuation":{
+                       "contents":[
+                         ${songShelfRow("v2", "Two")},
+                         {"continuationItemViewModel":{"continuationCommand":{"token":"NEXT2"}}}
+                       ]
+                     }}}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals(1, page.items.size)
+        assertEquals("NEXT2", page.continuation)
+    }
+
+    @Test
+    fun `a two-column liked-songs page whose token is a modern section item keeps it`() {
+        val page =
+            LibraryResponseParser.pageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "contents":{"twoColumnBrowseResultsRenderer":{"secondaryContents":{"sectionListRenderer":{
+                       "contents":[
+                         {"musicPlaylistShelfRenderer":{"playlistId":"LM","contents":[
+                           ${songShelfRow("v1", "One")}
+                         ]}},
+                         {"continuationItemViewModel":{"continuationCommand":{"token":"PAGE2"}}}
+                       ]
+                     }}}}}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals(1, page.items.size)
+        assertEquals("PAGE2", page.continuation)
+    }
+
+    @Test
+    fun `every liked song is walked when the token arrives as a modern item`() {
+        val first =
+            LibraryResponseParser.pageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "contents":{"singleColumnBrowseResultsRenderer":{"tabs":[
+                       {"tabRenderer":{"content":{"sectionListRenderer":{
+                         "contents":[{"gridRenderer":{"items":[
+                           ${songRow("v1", "One")},
+                           {"continuationItemViewModel":{"continuationCommand":{"token":"PAGE2"}}}
+                         ]}}]
+                       }}}}
+                     ]}}}
+                    """.trimIndent(),
+                ),
+            )
+        val second =
+            LibraryResponseParser.continuationPageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "continuationContents":{"musicPlaylistShelfContinuation":{
+                       "contents":[${songShelfRow("v2", "Two")}]
+                     }}}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals("PAGE2", first.continuation)
+        assertEquals(
+            "both pages of a liked-songs list are read",
+            listOf("v1", "v2"),
+            (first.items + second.items).map { it.id },
+        )
+    }
 }

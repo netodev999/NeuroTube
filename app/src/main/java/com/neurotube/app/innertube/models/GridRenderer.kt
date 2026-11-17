@@ -30,6 +30,11 @@ data class GridRenderer(
         val musicNavigationButtonRenderer: MusicNavigationButtonRenderer? = null,
         val musicTwoRowItemRenderer: MusicTwoRowItemRenderer? = null,
         val continuationItemRenderer: ContinuationItemRenderer? = null,
+        // A modern grid closes with a `continuationItemViewModel` carrying its next-page token in
+        // place of the older `continuationItemRenderer`. Reading only the old one lost the token, so
+        // a grid longer than one page — every liked-songs list with more than a screenful — imported
+        // just its first page.
+        val continuationItemViewModel: JsonObject? = null,
         // A signed-in music library now answers with lockup rows in place of the two-row ones, so
         // the grid is read through both shapes.
         val lockupViewModel: JsonObject? = null,

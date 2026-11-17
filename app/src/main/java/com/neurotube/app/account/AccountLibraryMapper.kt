@@ -2,9 +2,7 @@ package com.neurotube.app.account
 
 import com.neurotube.app.data.local.ChannelSubscription
 import com.neurotube.app.data.local.LikedVideoInfo
-import com.neurotube.app.data.local.VideoHistoryEntry
 import com.neurotube.app.data.model.Channel
-import com.neurotube.app.data.model.Video
 import com.neurotube.app.innertube.models.AlbumItem
 import com.neurotube.app.innertube.models.ArtistItem
 import com.neurotube.app.innertube.models.PlaylistItem
@@ -30,7 +28,6 @@ data class AccountImportReport(
     val albums: Int = 0,
     val videoPlaylists: Int = 0,
     val watchLater: Int = 0,
-    val history: Int = 0,
     /** What each part found, wrote and failed with, in the order they ran. */
     val steps: List<ImportStepDiagnostic> = emptyList(),
 ) {
@@ -42,8 +39,7 @@ data class AccountImportReport(
                 playlists == 0 &&
                 albums == 0 &&
                 videoPlaylists == 0 &&
-                watchLater == 0 &&
-                history == 0
+                watchLater == 0
 
     /** Whether every part finished without an error, whatever it found. */
     val isClean: Boolean
@@ -174,27 +170,3 @@ internal fun List<AccountVideoCollection>.toSavedVideoPlaylists(): List<AccountV
 /** The two lists YouTube keeps for every account, which the app has its own version of. */
 internal const val WATCH_LATER_PLAYLIST_ID = "WL"
 internal const val LIKED_VIDEOS_PLAYLIST_ID = "LL"
-
-/**
- * The videos a signed-in account watched, newest first, as history entries.
- *
- * [now] anchors the order: the history page lists its newest watch first, and the history store
- * sorts by the time it is given, so the first row is stamped [now] and each later one a millisecond
- * earlier. A watch with no duration is kept — the position is simply unknown — because losing the
- * row would lose the fact that the video was watched at all.
- */
-internal fun List<Video>.toHistoryEntries(now: Long): List<VideoHistoryEntry> =
-    distinctBy { it.id }
-        .filter { it.id.isNotBlank() }
-        .mapIndexed { index, video ->
-            VideoHistoryEntry(
-                videoId = video.id,
-                position = 0L,
-                duration = video.duration.toLong(),
-                timestamp = now - index,
-                title = video.title,
-                thumbnailUrl = video.thumbnailUrl,
-                channelName = video.channelName,
-                channelId = video.channelId,
-            )
-        }

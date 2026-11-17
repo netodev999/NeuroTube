@@ -55,7 +55,7 @@ Feature suggestions are welcome! Please:
 
 ```bash
 # Clone your fork
-git clone https://github.com/YOUR_USERNAME/NeuroTube.git
+git clone https://github.com/netodev999/NeuroTube.git
 cd NeuroTube
 
 # Add upstream remote

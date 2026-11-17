@@ -907,27 +907,6 @@ object YouTube {
         }.onFailure { error -> if (ImportDiagnostics.recording) logFailure("accountHomeFeed", error) }
 
     /**
-     * The viewer's watch history, one page at a time.
-     *
-     * `FEhistory` is the page YouTube's own history view shows, and like the playlists page it needs
-     * the viewer's cookie.
-     */
-    suspend fun accountWatchHistory(continuation: String? = null) =
-        runCatching {
-            val response =
-                innerTube
-                    .mainSiteBrowse(
-                        client = WEB_AUTHENTICATED,
-                        browseId = if (continuation == null) "FEhistory" else null,
-                        continuation = continuation,
-                        setLogin = true,
-                    ).bodyAsText()
-
-            if (ImportDiagnostics.recording) logResponse("accountWatchHistory", 200, response)
-            Json.parseToJsonElement(response).toMainSiteFeedPage()
-        }.onFailure { error -> if (ImportDiagnostics.recording) logFailure("accountWatchHistory", error) }
-
-    /**
      * The viewer's Watch Later list, one page at a time.
      *
      * `VLWL` is the special playlist behind it, and it is paged like any other playlist page.
