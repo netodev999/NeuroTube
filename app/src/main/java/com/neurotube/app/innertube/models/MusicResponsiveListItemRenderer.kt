@@ -1,0 +1,142 @@
+@file:OptIn(ExperimentalSerializationApi::class)
+
+package com.neurotube.app.innertube.models
+
+import com.neurotube.app.innertube.models.BrowseEndpoint.BrowseEndpointContextSupportedConfigs.BrowseEndpointContextMusicConfig.Companion.MUSIC_PAGE_TYPE_ALBUM
+import com.neurotube.app.innertube.models.BrowseEndpoint.BrowseEndpointContextSupportedConfigs.BrowseEndpointContextMusicConfig.Companion.MUSIC_PAGE_TYPE_ARTIST
+import com.neurotube.app.innertube.models.BrowseEndpoint.BrowseEndpointContextSupportedConfigs.BrowseEndpointContextMusicConfig.Companion.MUSIC_PAGE_TYPE_AUDIOBOOK
+import com.neurotube.app.innertube.models.BrowseEndpoint.BrowseEndpointContextSupportedConfigs.BrowseEndpointContextMusicConfig.Companion.MUSIC_PAGE_TYPE_LIBRARY_ARTIST
+import com.neurotube.app.innertube.models.BrowseEndpoint.BrowseEndpointContextSupportedConfigs.BrowseEndpointContextMusicConfig.Companion.MUSIC_PAGE_TYPE_PLAYLIST
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonNames
+
+/**
+ * Typical list item
+ * Used in [MusicCarouselShelfRenderer], [MusicShelfRenderer]
+ * Appears in quick picks, search results, table items, etc.
+ */
+@Serializable
+data class MusicResponsiveListItemRenderer(
+    val badges: List<Badges>? = null,
+    val fixedColumns: List<FlexColumn>? = null,
+    val flexColumns: List<FlexColumn> = emptyList(),
+    val thumbnail: ThumbnailRenderer? = null,
+    val menu: Menu? = null,
+    val playlistItemData: PlaylistItemData? = null,
+    val overlay: Overlay? = null,
+    val navigationEndpoint: NavigationEndpoint? = null,
+) {
+    val isSong: Boolean
+        get() = navigationEndpoint == null || navigationEndpoint.watchEndpoint != null || navigationEndpoint.watchPlaylistEndpoint != null
+    val isPlaylist: Boolean
+        get() =
+            navigationEndpoint
+                ?.browseEndpoint
+                ?.browseEndpointContextSupportedConfigs
+                ?.browseEndpointContextMusicConfig
+                ?.pageType ==
+                MUSIC_PAGE_TYPE_PLAYLIST
+    val isAlbum: Boolean
+        get() =
+            navigationEndpoint
+                ?.browseEndpoint
+                ?.browseEndpointContextSupportedConfigs
+                ?.browseEndpointContextMusicConfig
+                ?.pageType ==
+                MUSIC_PAGE_TYPE_ALBUM ||
+                navigationEndpoint
+                    ?.browseEndpoint
+                    ?.browseEndpointContextSupportedConfigs
+                    ?.browseEndpointContextMusicConfig
+                    ?.pageType ==
+                MUSIC_PAGE_TYPE_AUDIOBOOK
+    val isArtist: Boolean
+        get() =
+            navigationEndpoint
+                ?.browseEndpoint
+                ?.browseEndpointContextSupportedConfigs
+                ?.browseEndpointContextMusicConfig
+                ?.pageType ==
+                MUSIC_PAGE_TYPE_ARTIST ||
+                navigationEndpoint
+                    ?.browseEndpoint
+                    ?.browseEndpointContextSupportedConfigs
+                    ?.browseEndpointContextMusicConfig
+                    ?.pageType ==
+                MUSIC_PAGE_TYPE_LIBRARY_ARTIST
+
+    val musicVideoType: String?
+        get() =
+            overlay
+                ?.musicItemThumbnailOverlayRenderer
+                ?.content
+                ?.musicPlayButtonRenderer
+                ?.playNavigationEndpoint
+                ?.musicVideoType
+                ?: navigationEndpoint?.musicVideoType
+
+    /**
+     * The row's video, also when YouTube leaves out [playlistItemData].
+     *
+     * A liked-songs shelf and the reduced search answer omit `playlistItemData`, carrying the id on
+     * the play overlay or the title run instead; reading only the first field dropped those rows.
+     */
+    val videoId: String?
+        get() =
+            playlistItemData?.videoId
+                ?: overlay
+                    ?.musicItemThumbnailOverlayRenderer
+                    ?.content
+                    ?.musicPlayButtonRenderer
+                    ?.playNavigationEndpoint
+                    ?.watchEndpoint
+                    ?.videoId
+                ?: navigationEndpoint?.watchEndpoint?.videoId
+                ?: flexColumns
+                    .firstOrNull()
+                    ?.musicResponsiveListItemFlexColumnRenderer
+                    ?.text
+                    ?.runs
+                    ?.firstOrNull()
+                    ?.navigationEndpoint
+                    ?.watchEndpoint
+                    ?.videoId
+
+    @Serializable
+    data class FlexColumn(
+        @JsonNames("musicResponsiveListItemFixedColumnRenderer")
+        val musicResponsiveListItemFlexColumnRenderer: MusicResponsiveListItemFlexColumnRenderer,
+    ) {
+        @Serializable
+        data class MusicResponsiveListItemFlexColumnRenderer(
+            val text: Runs? = null,
+        )
+    }
+
+    @Serializable
+    data class PlaylistItemData(
+        val playlistSetVideoId: String? = null,
+        val videoId: String,
+    )
+
+    @Serializable
+    data class Overlay(
+        val musicItemThumbnailOverlayRenderer: MusicItemThumbnailOverlayRenderer,
+    ) {
+        @Serializable
+        data class MusicItemThumbnailOverlayRenderer(
+            val content: Content,
+        ) {
+            @Serializable
+            data class Content(
+                val musicPlayButtonRenderer: MusicPlayButtonRenderer,
+            ) {
+                @Serializable
+                data class MusicPlayButtonRenderer(
+                    val playNavigationEndpoint: NavigationEndpoint? = null,
+                )
+            }
+        }
+    }
+}
