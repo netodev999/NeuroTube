@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2026 NeuroTube | A-EDev
+ * Copyright (C) 2026 NeuroTube | netodev999
  *
  * This file is part of NeuroTube (https://github.com/netodev999/NeuroTube).
  *
