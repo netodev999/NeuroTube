@@ -473,21 +473,26 @@ generated sources, and ignored reference projects are outside the target set.
 
 On Windows PowerShell, use `.\gradlew.bat ktlintCheck`.
 
-2. To automatically format targeted files changed since the lint ratchet revision, run:
+2. To automatically format, run:
 
 ```bash
 ./gradlew ktlintFormat
 ```
 
-On Windows PowerShell, use `.\gradlew.bat ktlintFormat`. Review the resulting diff before committing.
+On Windows PowerShell, use `.\gradlew.bat ktlintFormat`. **This reformats the whole tree, not only
+your changes** — Spotless is configured without a ratchet, so it rewrites every file that does not
+match the rules, including the many legacy files that predate them. Do not run it blindly and then
+commit; a bare `spotlessApply` produces hundreds of unrelated files in your diff. Either restrict it
+to your files, or run it and then `git checkout` every path you did not intend to touch. A plain
+`git checkout` reverts uncommitted work with no undo, so stash or commit first.
 
 3. Do not bypass, disable, or weaken the formatter to make a change pass. Fix the reported file or
 update `.editorconfig` only when the project convention itself is intentionally changing.
-4. The repository adopts formatting incrementally with Spotless `ratchetFrom`, so legacy untouched
-files are not reformatted. A newly added file or an existing targeted file changed after the ratchet
-revision must pass the configured ktlint rules.
-5. GitHub Actions runs `spotlessCheck` before tests and builds. A formatting violation fails the
-`Build APK` job. Add any future first-party Kotlin module to the Spotless target list explicitly.
+4. Because there is no ratchet, `spotlessCheck` fails on the pre-existing legacy files as well as on
+your own. The CI step that runs it is `continue-on-error`, so those baseline violations do not fail
+the build; make sure your own changed files are clean rather than chasing the whole-tree report.
+5. GitHub Actions runs `spotlessCheck` before tests and builds. Add any future first-party Kotlin
+module to the Spotless target list explicitly.
 
 ## Building and testing your changes
 
