@@ -1,3 +1,33 @@
+# NeuroTube v1.5.11
+
+**Release date:** 2026-11-17
+
+A third bug-fix release for the account library import. v1.5.10 read the liked songs, but a library
+longer than one page still imported only its first page.
+
+## Fixes
+
+- **A long liked-songs list now imports in full.** A modern library page hands out its next-page
+  token in a `continuationItemViewModel` instead of the older `continuationItemRenderer`, and the
+  grid, shelf and section-list readers only knew the old shape. They ignored the new token, so the
+  walk stopped after the first page and every liked song past it was left out. All three readers now
+  accept either shape and follow the token to the end.
+- **Watch history is no longer imported from the account.** The app keeps its own local history, and
+  copying the account's history on top of it produced a second, duplicated set of rows. The import
+  now stops at Watch Later and leaves the local history untouched.
+- **The corrected import runs again after the update.** The automatic import runs once per account,
+  so an account that had already signed in once would have kept the old, incomplete result. The
+  import's behaviour version is bumped, so an account imported by an earlier version is imported
+  again and the fix reaches people who already signed in.
+
+## Notes
+
+- Importing only reads. Nothing is written back to the account and nothing is deleted.
+- Re-importing is safe: anything already present is left as it is, and each part is tried on its
+  own, so one failing does not lose the others.
+- One universal APK, and the same signing key as every earlier release.
+
+
 # NeuroTube v1.5.10
 
 **Release date:** 2026-11-13
