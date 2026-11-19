@@ -691,6 +691,63 @@ class LibraryResponseParserTest {
     }
 
     @Test
+    fun `a two-column page whose shelf sits in its tab is read, not only its secondary column`() {
+        val page =
+            LibraryResponseParser.pageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "contents":{"twoColumnBrowseResultsRenderer":{
+                       "tabs":[{"tabRenderer":{"content":{"sectionListRenderer":{
+                         "contents":[{"musicPlaylistShelfRenderer":{"playlistId":"LM","contents":[
+                           {"musicResponsiveListItemRenderer":{
+                             "playlistItemData":{"videoId":"v1"},
+                             "flexColumns":[
+                               {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"One"}]}}},
+                               {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[
+                                 {"text":"An Artist","navigationEndpoint":{"browseEndpoint":{"browseId":"UCa"}}}]}}}
+                             ]
+                           }}
+                         ]}}]
+                       }}}}
+                     ]}}}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals("a shelf under the tab must not be skipped", 1, page.items.size)
+        assertEquals("v1", page.items.single().id)
+    }
+
+    @Test
+    fun `a two-column page prefers the tab shelf over an empty secondary column`() {
+        val page =
+            LibraryResponseParser.pageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "contents":{"twoColumnBrowseResultsRenderer":{
+                       "tabs":[{"tabRenderer":{"content":{"sectionListRenderer":{
+                         "contents":[{"musicPlaylistShelfRenderer":{"contents":[
+                           {"musicResponsiveListItemRenderer":{
+                             "playlistItemData":{"videoId":"v1"},
+                             "flexColumns":[
+                               {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"One"}]}}}
+                             ]
+                           }}
+                         ]}}]
+                       }}}}],
+                       "secondaryContents":{"sectionListRenderer":{"contents":[]}}
+                     }}}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals("an empty secondary column must not shadow the tab", 1, page.items.size)
+        assertEquals("v1", page.items.single().id)
+    }
+
+    @Test
     fun `a liked song whose third column is a play count is still imported`() {
         val page =
             LibraryResponseParser.pageOf(

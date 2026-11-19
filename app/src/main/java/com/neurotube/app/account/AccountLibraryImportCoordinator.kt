@@ -36,7 +36,7 @@ private const val AUTO_IMPORT_SETTLE_MS = 2_000L
  * corrected import runs again for an account an earlier, broken one already marked done — without
  * this, a fix reaches no one who has already signed in once.
  */
-private const val ACCOUNT_IMPORT_VERSION = 4
+private const val ACCOUNT_IMPORT_VERSION = 5
 
 /**
  * Owns the account-library import for the whole process: it starts one automatically once an

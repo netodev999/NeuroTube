@@ -1,3 +1,38 @@
+# NeuroTube v1.5.15
+
+**Release date:** 2026-11-19
+
+Fixes for the account import, which imported only part of a library — most visibly the liked songs,
+where an account with more likes than one page holds got a short list.
+
+## Fixes
+
+- **A rate-limited page is retried instead of ending the list.** The HTTP client runs with
+  `expectSuccess = true`, so a `429` or a `5xx` arrives as a `ResponseException`. That is not an
+  `IOException`, and the retry wrapper only caught `IOException` — so a page YouTube asked to be
+  fetched again was never fetched again. In the paged library walk the first page landed and every
+  page after it was dropped, which is why a large liked-songs list imported short. Retries now cover
+  `429` and `5xx`, honour `Retry-After`, and still fail fast on a `4xx` that the request itself caused.
+- **A walk that stops early is recorded.** A continuation that fails, or a page that carries neither
+  items nor a next token, ended the walk silently and the import still looked complete. Both are now
+  written to the import diagnostics with the item count reached and the reason, so a short import can
+  be read back instead of guessed at.
+- **A two-column page's own tab is read.** The parser read a two-column library page only from
+  `secondaryContents`, so a page that keeps its shelf under `tabs` — the shape a signed-in liked-songs
+  page can arrive in — was walked past and imported nothing. The tab's section list is now preferred,
+  with the secondary column as the fallback.
+
+## Upgrading
+
+The import runs again for an account an earlier version already marked done, so an account that
+imported a short list before this release is re-imported on the next launch without signing in again.
+
+## Tests
+
+- `RetryPolicyTest` covers which refusals are retried and how a `Retry-After` header is read.
+- `LibraryResponseParserTest` covers a two-column page whose shelf sits in its tab, and a page whose
+  secondary column is empty while its tab holds the items.
+
 # NeuroTube v1.5.14
 
 **Release date:** 2026-11-19

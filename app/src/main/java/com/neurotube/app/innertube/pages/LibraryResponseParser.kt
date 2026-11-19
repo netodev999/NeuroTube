@@ -140,19 +140,28 @@ object LibraryResponseParser {
      * `secondaryContents` — while other library pages and every continuation are single-column.
      * Reading only the single-column container walked past a whole liked-songs page and imported
      * nothing, which is how the account's liked songs never reached the app.
+     *
+     * The tab's own section list is preferred over the secondary column: a two-column page carries
+     * both, and the secondary column can hold an empty or unrelated list, which would shadow the
+     * tab that actually holds the items.
      */
     private fun sectionList(
         response: BrowseResponse,
         tabIndex: Int,
     ): SectionListRenderer? {
-        val tabs = response.contents?.singleColumnBrowseResultsRenderer?.tabs
-        if (tabs != null && tabIndex in tabs.indices) {
-            return tabs[tabIndex].tabRenderer.content?.sectionListRenderer
+        val twoColumn = response.contents?.twoColumnBrowseResultsRenderer
+        val singleColumnTabs = response.contents?.singleColumnBrowseResultsRenderer?.tabs
+        if (singleColumnTabs != null && tabIndex in singleColumnTabs.indices) {
+            singleColumnTabs[tabIndex].tabRenderer.content?.sectionListRenderer?.let { return it }
         }
-        return response.contents
-            ?.twoColumnBrowseResultsRenderer
-            ?.secondaryContents
-            ?.sectionListRenderer
+        // A two-column page lists its tabs as nullable entries, so a missing one is skipped rather
+        // than assumed present.
+        val twoColumnTabs = twoColumn?.tabs
+        if (twoColumnTabs != null && tabIndex in twoColumnTabs.indices) {
+            twoColumnTabs[tabIndex]?.tabRenderer?.content?.sectionListRenderer?.let { return it }
+        }
+        return twoColumn?.secondaryContents?.sectionListRenderer
+            ?: response.contents?.sectionListRenderer
     }
 
     /** The items and next token of a library continuation response. */

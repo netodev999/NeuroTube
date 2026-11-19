@@ -34,10 +34,52 @@ import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import java.io.IOException
 import java.net.Proxy
+import java.time.Duration
+import java.time.Instant
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.util.*
 import kotlin.io.encoding.Base64
 
 private const val TAG = "InnerTube"
+
+/** The longest a refusal may ask a request to wait, so one header cannot stall a walk indefinitely. */
+private const val MAX_RETRY_AFTER_MS = 30_000L
+
+/**
+ * Whether a refusal is the kind that a later attempt can get past.
+ *
+ * The client runs with `expectSuccess = true`, so a 429 or a 5xx arrives as a
+ * [ResponseException] rather than as a response to inspect. That exception is not an
+ * [IOException], and catching only [IOException] meant a rate-limited page was never retried: it
+ * failed on the first try and the caller treated it as the end of the list. In a paged walk that is
+ * silent truncation — the first page lands and the rest is never asked for again, so an account with
+ * more liked songs than one page holds imported a short list. A 4xx other than 429 is the request's
+ * own fault and is not worth repeating.
+ */
+internal fun isRetriableStatus(status: HttpStatusCode): Boolean =
+    status == HttpStatusCode.TooManyRequests || status.value >= HttpStatusCode.InternalServerError.value
+
+/**
+ * The wait a `Retry-After` header asks for, or null when it carries no usable value.
+ *
+ * The header is either a number of seconds or an HTTP date. Honouring it keeps a paged walk from
+ * turning a short pause the server asked for into a longer block, and the result is capped so one
+ * header cannot stall a walk indefinitely.
+ */
+internal fun retryAfterMillis(
+    header: String?,
+    now: Instant = Instant.now(),
+): Long? {
+    if (header.isNullOrBlank()) return null
+    val seconds = header.trim().toLongOrNull()
+    if (seconds != null) return (seconds * 1_000L).coerceIn(0L, MAX_RETRY_AFTER_MS)
+    val at =
+        runCatching { ZonedDateTime.parse(header.trim(), DateTimeFormatter.RFC_1123_DATE_TIME) }
+            .getOrNull()
+            ?: return null
+    return Duration.between(now, at.toInstant()).toMillis().coerceIn(0L, MAX_RETRY_AFTER_MS)
+}
 
 /**
  * Provide access to InnerTube endpoints.
@@ -215,9 +257,16 @@ class InnerTube {
         }
 
     /**
-     * Simple retry wrapper for transient IO errors (socket aborts, timeouts).
-     * Retries the given block up to [maxAttempts] times with exponential backoff.
-     * Cancellation is respected since [delay] will throw if the coroutine is cancelled.
+     * Retries a request that failed for a reason that will not persist: a socket abort or a timeout,
+     * or a refusal from YouTube that is worth asking again about.
+     *
+     * The client runs with `expectSuccess = true`, so a 429 or a 5xx arrives as a
+     * [ResponseException] rather than as a response to inspect. That exception is not an
+     * [IOException], and catching only [IOException] meant a rate-limited page was never retried: it
+     * failed on the first try and the caller treated it as the end of the list. In a paged walk that
+     * is silent truncation — the first page lands and the rest is never asked for again, so an
+     * account with more liked songs than one page holds imported a short list. A 4xx other than 429
+     * is the request's own fault and is rethrown at once.
      */
     private suspend fun <T> withRetry(
         maxAttempts: Int = 3,
@@ -234,6 +283,11 @@ class InnerTube {
                 attempt++
                 if (attempt >= maxAttempts) throw e
                 delay(currentDelay)
+                currentDelay = (currentDelay * factor).toLong()
+            } catch (e: ResponseException) {
+                attempt++
+                if (!isRetriableStatus(e.response.status) || attempt >= maxAttempts) throw e
+                delay(retryAfterMillis(e.response.headers[HttpHeaders.RetryAfter]) ?: currentDelay)
                 currentDelay = (currentDelay * factor).toLong()
             }
         }
