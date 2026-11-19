@@ -140,11 +140,12 @@ data class LibraryPage(
                     // A liked-songs page is a grid of two-row rows, and a song row is neither an
                     // album, a playlist nor an artist. Reading only those three walked past every
                     // song the grid carried, so the imported like count fell short of the account's.
+                    val videoId =
+                        renderer.navigationEndpoint.watchEndpoint?.videoId
+                            ?: renderer.navigationEndpoint.watchPlaylistEndpoint?.videoId
+                            ?: return null
                     SongItem(
-                        id =
-                            renderer.navigationEndpoint.watchEndpoint?.videoId
-                                ?: renderer.navigationEndpoint.watchPlaylistEndpoint?.videoId
-                                ?: return null,
+                        id = videoId,
                         title =
                             renderer.title.runs
                                 ?.firstOrNull()
@@ -153,7 +154,11 @@ data class LibraryPage(
                         album = null,
                         duration = null,
                         musicVideoType = renderer.musicVideoType,
-                        thumbnail = renderer.thumbnailRenderer.musicThumbnailRenderer?.getThumbnailUrl() ?: return null,
+                        // A song row can omit its thumbnail renderer; the video id is enough to build
+                        // the one the grid shows, so the row is kept rather than dropped.
+                        thumbnail =
+                            renderer.thumbnailRenderer.musicThumbnailRenderer?.getThumbnailUrl()
+                                ?: ThumbnailUrlResolver.buildHighQualityYoutubeThumbnail(videoId),
                         explicit =
                             renderer.subtitleBadges?.find {
                                 it.musicInlineBadgeRenderer?.icon?.iconType == "MUSIC_EXPLICIT_BADGE"

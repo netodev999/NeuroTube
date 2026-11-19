@@ -20,6 +20,9 @@ data class BrowseResponse(
     val contents: Contents? = null,
     val continuationContents: ContinuationContents? = null,
     val onResponseReceivedActions: List<ResponseAction>? = null,
+    // A library continuation can answer with a command rather than an action; a walk that reads only
+    // one of the two forms stops at the page that uses the other and imports a short list.
+    val onResponseReceivedCommands: List<ResponseCommand>? = null,
     val header: Header? = null,
     val microformat: Microformat? = null,
     val responseContext: ResponseContext,
@@ -72,6 +75,19 @@ data class BrowseResponse(
     @Serializable
     data class ResponseAction(
         val appendContinuationItemsAction: ContinuationItems? = null,
+        val reloadContinuationItemsAction: ContinuationItems? = null,
+    ) {
+        @Serializable
+        data class ContinuationItems(
+            val continuationItems: List<MusicShelfRenderer.Content>? = null,
+        )
+    }
+
+    /** The `onResponseReceivedCommands` form of [ResponseAction], which a library also answers with. */
+    @Serializable
+    data class ResponseCommand(
+        val appendContinuationItemsCommand: ContinuationItems? = null,
+        val reloadContinuationItemsCommand: ContinuationItems? = null,
     ) {
         @Serializable
         data class ContinuationItems(

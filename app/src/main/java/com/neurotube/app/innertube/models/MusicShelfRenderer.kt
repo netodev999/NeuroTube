@@ -15,6 +15,9 @@ data class MusicShelfRenderer(
     @Serializable
     data class Content(
         val musicResponsiveListItemRenderer: MusicResponsiveListItemRenderer? = null,
+        // A continuation shelf can carry two-row rows where a first page carries list rows, so both
+        // shapes are read; walking past one of them loses that page's songs.
+        val musicTwoRowItemRenderer: MusicTwoRowItemRenderer? = null,
         // A signed-in library now answers a shelf with lockup rows, as the grid does.
         val lockupViewModel: JsonObject? = null,
         val continuationItemRenderer: ContinuationItemRenderer? = null,

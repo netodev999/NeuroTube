@@ -505,6 +505,23 @@ module to the Spotless target list explicitly.
 2. If the build fails, fix the reported errors and rebuild before proceeding.
 3. For UI changes, actually run the app (emulator or device) and exercise the golden path plus edge cases — passing a build does not mean the feature works correctly.
 
+4. Spotless reports violations in files you never touched on a fresh checkout — the formatter's
+   import ordering resolves differently outside CI. Only fix your own files:
+   `./gradlew spotlessApply` then `git checkout --` every path you did not edit.
+
+### Library import — the page shapes it must read
+
+The account library is not one shape. Every list-bearing section of a page is read, not just the
+first: a signed-in liked-songs page opens with a header or sort-chip section and carries its grid
+after it. A continuation can arrive as `continuationContents` (grid, shelf, playlist shelf, section
+list), as an `onResponseReceivedActions` append or reload, or as `onResponseReceivedCommands`. A
+page whose shape is walked past yields no items and no next token, so the walk stops and the import
+silently comes up short — the failure looks like "some songs are missing", never like an error.
+
+When changing `LibraryResponseParser` or `LibraryPage`, add a test with the real page shape in
+`LibraryResponseParserTest` before changing the reader, and remember that the walk itself
+(`Result<LibraryPage>.completed()`) must have no page cap: the seen-token guard is what stops a loop.
+
 ## Baseline profile — when to regenerate
 
 The app ships a generated baseline profile at `app/src/main/generated/baselineProfiles/`

@@ -26,25 +26,76 @@ object LibraryResponseParser {
         response: BrowseResponse,
         tabIndex: Int = 0,
     ): LibraryPage {
-        val section = firstSection(response, tabIndex)
+        val sections = sectionList(response, tabIndex)?.contents.orEmpty()
         val fallback = sectionToken(response, tabIndex)
-        val grid = section?.gridRenderer
+
+        // Every list-bearing section is read, not only the first. A signed-in liked-songs page opens
+        // with a header or sort-chip section and carries its grid after it, so reading the first
+        // section alone imported nothing; a page split across several sections imported only the
+        // first one's share.
+        val items = mutableListOf<YTItem>()
+        var continuation: String? = null
+        for (section in sections) {
+            val read = readSection(section) ?: continue
+            items += read.items
+            if (continuation == null) continuation = read.continuation
+        }
+        return LibraryPage(
+            items = items,
+            continuation = continuation ?: fallback,
+        )
+    }
+
+    /** The items and next token of one library section, or null when it lists nothing. */
+    private fun readSection(section: SectionListRenderer.Content): LibraryPage? {
+        val grid = section.gridRenderer
         if (grid != null) {
             return LibraryPage(
                 items = grid.items.toLibraryItems(),
                 continuation =
                     grid.continuations?.getContinuation()
-                        ?: grid.items.trailingContinuation()
-                        ?: fallback,
+                        ?: grid.items.trailingContinuation(),
             )
         }
-        val shelf = section?.musicShelfRenderer
+        section.musicPlaylistShelfRenderer?.let { return it.asSection() }
+        section.musicShelfRenderer?.let { shelf ->
+            return LibraryPage(
+                items = shelf.toItems(),
+                continuation =
+                    shelf.continuations?.getContinuation()
+                        ?: shelf.contents?.getContinuation(),
+            )
+        }
+        val itemSection = section.itemSectionRenderer ?: return null
+        itemSection.gridRenderer?.let { grid ->
+            return LibraryPage(
+                items = grid.items.toLibraryItems(),
+                continuation =
+                    grid.continuations?.getContinuation()
+                        ?: grid.items.trailingContinuation(),
+            )
+        }
+        itemSection.musicShelfRenderer?.let { shelf ->
+            return LibraryPage(
+                items = shelf.toItems(),
+                continuation =
+                    shelf.continuations?.getContinuation()
+                        ?: shelf.contents?.getContinuation(),
+            )
+        }
+        val nestedGrid = itemSection.contents.orEmpty().firstNotNullOfOrNull { it.gridRenderer }
+        if (nestedGrid != null) {
+            return LibraryPage(
+                items = nestedGrid.items.toLibraryItems(),
+                continuation =
+                    nestedGrid.continuations?.getContinuation()
+                        ?: nestedGrid.items.trailingContinuation(),
+            )
+        }
+        // The plain row list an item section carries directly.
         return LibraryPage(
-            items = shelf.toItems(),
-            continuation =
-                shelf?.continuations?.getContinuation()
-                    ?: shelf?.contents?.getContinuation()
-                    ?: fallback,
+            items = itemSection.contents.toItems(),
+            continuation = itemSection.contents?.getContinuation(),
         )
     }
 
@@ -63,11 +114,23 @@ object LibraryResponseParser {
     ): String? {
         val sectionList = sectionList(response, tabIndex) ?: return null
         val contents = sectionList.contents.orEmpty()
-        // A modern page closes the list with a bare continuation item; that is not a section of its
-        // own, so it must not count as a second one.
-        if (contents.count { it.continuationItemViewModel == null } != 1) return null
+        // A page's leading header or sort-chip section holds no list and so must not count as a
+        // second one; counting it rejected the token of the one real section and stopped the walk.
+        if (contents.count { it.carriesList() } != 1) return null
         return sectionList.continuations?.getContinuation()
             ?: contents.firstNotNullOfOrNull { it.continuationItemViewModel?.continuationItemViewModelToken() }
+    }
+
+    /** Whether a section holds anything to read, as opposed to a header or sort-chip strip. */
+    private fun SectionListRenderer.Content.carriesList(): Boolean {
+        if (gridRenderer != null || musicShelfRenderer != null || musicPlaylistShelfRenderer != null) return true
+        val itemSection = itemSectionRenderer ?: return false
+        if (itemSection.gridRenderer != null || itemSection.musicShelfRenderer != null) return true
+        return itemSection.contents.orEmpty().any { content ->
+            content.musicResponsiveListItemRenderer != null ||
+                content.lockupViewModel != null ||
+                content.gridRenderer != null
+        }
     }
 
     /**
@@ -107,11 +170,20 @@ object LibraryResponseParser {
 
         contents?.sectionListContinuation?.let { sectionList ->
             // A continuation of a grid is bare, but a continuation of a shelf repeats the section
-            // list and puts the next token on the section list itself.
+            // list and puts the next token on the section list itself. Every section is read for the
+            // same reason the first page reads them all: a continuation can carry more than one.
+            val fallbackContinuation = sectionList.continuations?.getContinuation()
+            val items = mutableListOf<YTItem>()
+            var continuation: String? = null
+            for (section in sectionList.contents) {
+                val page = fromSlice(section = section, fallbackContinuation = null)
+                items += page.items
+                if (continuation == null) continuation = page.continuation
+            }
             val page =
-                fromSlice(
-                    section = sectionList.contents.firstOrNull(),
-                    fallbackContinuation = sectionList.continuations?.getContinuation(),
+                LibraryContinuationPage(
+                    items = items,
+                    continuation = continuation ?: fallbackContinuation,
                 )
             if (page.hasContent) return page
         }
@@ -134,66 +206,50 @@ object LibraryResponseParser {
             if (page.hasContent) return page
         }
 
-        // A library page can hand its next slice back as an appended list instead of as continuation
-        // contents; the token then rides on the last appended row.
-        val appended =
-            response.onResponseReceivedActions
-                ?.firstOrNull()
-                ?.appendContinuationItemsAction
-                ?.continuationItems
-                .orEmpty()
-        return LibraryContinuationPage(
-            items = appended.toItems(),
-            continuation = appended.getContinuation(),
-        )
+        // A library page can hand its next slice back as an appended or reloaded list instead of as
+        // continuation contents; the token then rides on the last row. Both the action
+        // (`onResponseReceivedActions`) and the command (`onResponseReceivedCommands`) forms are
+        // served, and a walk that reads only the first shape stops at the page that uses the other.
+        val handed =
+            response.continuationItemsOfActions()
+                ?: response.continuationItemsOfCommands()
+        if (handed != null) {
+            return LibraryContinuationPage(
+                items = handed.toItems(),
+                continuation = handed.getContinuation(),
+            )
+        }
+
+        return LibraryContinuationPage(items = emptyList(), continuation = null)
     }
+
+    /** The rows a page hands back as an appended or reloaded list in `onResponseReceivedActions`. */
+    private fun BrowseResponse.continuationItemsOfActions(): List<MusicShelfRenderer.Content>? =
+        onResponseReceivedActions
+            ?.firstNotNullOfOrNull { action ->
+                action.appendContinuationItemsAction?.continuationItems
+                    ?: action.reloadContinuationItemsAction?.continuationItems
+            }
+
+    /** The same, in the `onResponseReceivedCommands` form. */
+    private fun BrowseResponse.continuationItemsOfCommands(): List<MusicShelfRenderer.Content>? =
+        onResponseReceivedCommands
+            ?.firstNotNullOfOrNull { command ->
+                command.appendContinuationItemsCommand?.continuationItems
+                    ?: command.reloadContinuationItemsCommand?.continuationItems
+            }
 
     /** Whether a page carried anything, so an empty container cannot shadow a fuller one. */
     private val LibraryContinuationPage.hasContent: Boolean
         get() = items.isNotEmpty() || continuation != null
 
-    /**
-     * The section holding a library tab's items. The section list usually starts with the grid or
-     * shelf itself, but can start with a playlist shelf, or with an item section wrapping any of
-     * them, and that item section can in turn hold a grid, a shelf, a playlist shelf, or a list of
-     * section items.
-     */
-    private fun firstSection(
-        response: BrowseResponse,
-        tabIndex: Int,
-    ): SectionListRenderer.Content? {
-        val sections = sectionList(response, tabIndex)?.contents ?: return null
-        val section = sections.firstOrNull() ?: return null
-        section.musicPlaylistShelfRenderer?.let { return it.asSection() }
-        val itemSection = section.itemSectionRenderer ?: return section
-
-        itemSection.gridRenderer?.let { return SectionListRenderer.Content(gridRenderer = it) }
-        itemSection.musicShelfRenderer?.let { return SectionListRenderer.Content(musicShelfRenderer = it) }
-        val nestedGrid = itemSection.contents.orEmpty().firstNotNullOfOrNull { it.gridRenderer }
-        if (nestedGrid != null) return SectionListRenderer.Content(gridRenderer = nestedGrid)
-        return SectionListRenderer.Content(
-            musicShelfRenderer =
-                MusicShelfRenderer(
-                    title = null,
-                    contents = itemSection.contents,
-                    continuations = null,
-                    bottomEndpoint = null,
-                    moreContentButton = null,
-                ),
-        )
-    }
-
     /** A playlist shelf read as the shelf shape the rest of this file works with. */
-    private fun MusicPlaylistShelfRenderer.asSection(): SectionListRenderer.Content =
-        SectionListRenderer.Content(
-            musicShelfRenderer =
-                MusicShelfRenderer(
-                    title = null,
-                    contents = contents,
-                    continuations = continuations,
-                    bottomEndpoint = null,
-                    moreContentButton = null,
-                ),
+    private fun MusicPlaylistShelfRenderer.asSection(): LibraryPage =
+        LibraryPage(
+            items = contents.toItems(),
+            continuation =
+                continuations?.getContinuation()
+                    ?: contents?.getContinuation(),
         )
 
     /**
@@ -205,46 +261,25 @@ object LibraryResponseParser {
      * longer than one page imported just its first slice.
      */
     private fun List<GridRenderer.Item>.trailingContinuation(): String? =
-        lastOrNull()
-            ?.let { item ->
-                item.continuationItemRenderer
-                    ?.continuationEndpoint
-                    ?.continuationCommand
-                    ?.token
-                    ?: item.continuationItemViewModel?.continuationItemViewModelToken()
-            }
+        // The token item is normally last, but a grid can append it before a trailing banner; the
+        // whole list is searched so a stray item after it cannot strand the rest of the list.
+        firstNotNullOfOrNull { item ->
+            item.continuationItemRenderer
+                ?.continuationEndpoint
+                ?.continuationCommand
+                ?.token
+                ?: item.continuationItemViewModel?.continuationItemViewModelToken()
+        }
 
     /** One slice of a library: its items, and the token to continue from when it has no own token. */
     private fun fromSlice(
         section: SectionListRenderer.Content?,
         fallbackContinuation: String?,
     ): LibraryContinuationPage {
-        val grid = section?.gridRenderer
-        if (grid != null) {
-            return LibraryContinuationPage(
-                items = grid.items.toLibraryItems(),
-                continuation =
-                    grid.continuations?.getContinuation()
-                        ?: grid.items.trailingContinuation()
-                        ?: fallbackContinuation,
-            )
-        }
-        section?.musicPlaylistShelfRenderer?.let { shelf ->
-            return LibraryContinuationPage(
-                items = shelf.contents.toItems(),
-                continuation =
-                    shelf.continuations?.getContinuation()
-                        ?: shelf.contents?.getContinuation()
-                        ?: fallbackContinuation,
-            )
-        }
-        val shelf = section?.musicShelfRenderer
+        val read = section?.let(::readSection)
         return LibraryContinuationPage(
-            items = shelf.toItems(),
-            continuation =
-                shelf?.continuations?.getContinuation()
-                    ?: shelf?.contents?.getContinuation()
-                    ?: fallbackContinuation,
+            items = read?.items.orEmpty(),
+            continuation = read?.continuation ?: fallbackContinuation,
         )
     }
 
@@ -261,6 +296,7 @@ object LibraryResponseParser {
             val direct =
                 listOfNotNull(
                     content.musicResponsiveListItemRenderer?.let { LibraryPage.fromMusicResponsiveListItemRenderer(it) }
+                        ?: content.musicTwoRowItemRenderer?.let { LibraryPage.fromMusicTwoRowItemRenderer(it) }
                         ?: content.lockupViewModel?.toLibraryItem(),
                 )
             // A section item can itself be a grid, which is how some libraries return their saved

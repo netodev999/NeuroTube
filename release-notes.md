@@ -1,3 +1,40 @@
+# NeuroTube v1.5.12
+
+**Release date:** 2026-11-19
+
+A fourth bug-fix release for the account library import. v1.5.11 followed the next-page token, but
+several page shapes still ended the walk early, so a full liked-songs list still came up short.
+
+## Fixes
+
+- **Every section of a library page is read, not just the first.** A signed-in liked-songs page opens
+  with a header or sort-chip section and carries its grid after it. The reader took only the first
+  section, so the songs sat in a section it never looked at. A page split across several sections
+  had the same problem: only the first section's share was imported.
+- **The next-page token survives a leading header section.** The token sits on the section list, and
+  it was only taken when the page had exactly one section. A header section counted as a second one
+  and the token was rejected, so the walk stopped after the first page.
+- **A page handed back as a command or a reload is read.** A continuation can arrive as
+  `onResponseReceivedCommands` or as a reload rather than an append, and only the append action was
+  read. A walk that meets the other shape stops there.
+- **A continuation can carry two-row rows, a bare grid or shelf, or an item section.** Each of those
+  shapes is now read, so no page comes back empty and ends the walk.
+- **A song row without a thumbnail renderer is kept.** The thumbnail is built from the video id
+  instead of dropping the song.
+- **The next-page token is found wherever it sits in a grid.** It is normally the last item; when a
+  trailing banner followed it, reading only the last item lost it.
+- **The walk is no longer capped at 50 pages.** The cap silently truncated the likes of anyone with
+  a longer list. The seen-token guard is what stops a loop, so the list is now walked to its end.
+- **The corrected import runs again after the update.** The import's behaviour version is bumped to
+  4, so an account imported by an earlier version is imported again.
+
+## Notes
+
+- Importing only reads. Nothing is written back to the account and nothing is deleted.
+- Re-importing is safe: anything already present is left as it is, and each part is tried on its
+  own, so one failing does not lose the others.
+- One universal APK, and the same signing key as every earlier release.
+
 # NeuroTube v1.5.11
 
 **Release date:** 2026-11-17

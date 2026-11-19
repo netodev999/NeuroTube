@@ -1007,6 +1007,285 @@ class LibraryResponseParserTest {
     }
 
     @Test
+    fun `a grid whose token item is followed by another item still continues`() {
+        // The token item is normally last; when a trailing banner follows it, reading only the last
+        // item lost the token and the walk stopped after the first page.
+        val page =
+            LibraryResponseParser.pageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "contents":{"singleColumnBrowseResultsRenderer":{"tabs":[
+                       {"tabRenderer":{"content":{"sectionListRenderer":{
+                         "contents":[{"gridRenderer":{"items":[
+                           ${songRow("v1", "One")},
+                           {"continuationItemRenderer":{"continuationEndpoint":{"continuationCommand":{"token":"PAGE2"}}}},
+                           {"musicTwoRowItemRenderer":{
+                             "title":{"runs":[{"text":"More like this"}]},
+                             "thumbnailRenderer":{},
+                             "navigationEndpoint":{"browseEndpoint":{"browseId":"UCx"}}}}]}}]
+                       }}}}
+                     ]}}}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals("PAGE2", page.continuation)
+        assertEquals(listOf("v1"), page.items.map { it.id })
+    }
+
+    @Test
+    fun `a liked song whose two-row row carries no thumbnail is still imported`() {
+        // The video id builds the thumbnail, so a row that omits its thumbnail renderer must not be
+        // dropped — dropping it shortened the imported like list by however many such rows there were.
+        val page =
+            LibraryResponseParser.pageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "contents":{"singleColumnBrowseResultsRenderer":{"tabs":[
+                       {"tabRenderer":{"content":{"sectionListRenderer":{
+                         "contents":[{"gridRenderer":{"items":[
+                           {"musicTwoRowItemRenderer":{
+                             "title":{"runs":[{"text":"No Thumb"}]},
+                             "thumbnailRenderer":{},
+                             "navigationEndpoint":{"watchEndpoint":{"videoId":"v1"}}}}]}}]
+                       }}}}
+                     ]}}}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals(listOf("v1"), page.items.map { it.id })
+        assertTrue(
+            "the thumbnail is built from the video id",
+            page.items
+                .single()
+                .thumbnail
+                .orEmpty()
+                .contains("v1"),
+        )
+    }
+
+    @Test
+    fun `a liked-songs page whose grid follows a header section imports its songs`() {
+        // A signed-in liked-songs page opens with a header or sort-chip section and only then
+        // carries the grid. Reading just the first section walked past every song.
+        val page =
+            LibraryResponseParser.pageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "contents":{"singleColumnBrowseResultsRenderer":{"tabs":[
+                       {"tabRenderer":{"content":{"sectionListRenderer":{
+                         "contents":[
+                           {"itemSectionRenderer":{"contents":[
+                             {"musicSortFilterButtonRenderer":{"title":{"runs":[{"text":"Recently liked"}]}}}]}},
+                           {"gridRenderer":{"items":[
+                             ${songRow("v1", "One")},
+                             ${songRow("v2", "Two")}]}}
+                         ]
+                       }}}}
+                     ]}}}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals(
+            "the songs after a leading header section are imported",
+            listOf("v1", "v2"),
+            page.items.map { it.id },
+        )
+    }
+
+    @Test
+    fun `a liked-songs page served as several sections imports every song`() {
+        val page =
+            LibraryResponseParser.pageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "contents":{"singleColumnBrowseResultsRenderer":{"tabs":[
+                       {"tabRenderer":{"content":{"sectionListRenderer":{
+                         "contents":[
+                           {"gridRenderer":{"items":[${songRow("v1", "One")}]}},
+                           {"gridRenderer":{"items":[${songRow("v2", "Two")}]}}
+                         ]
+                       }}}}
+                     ]}}}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals(
+            "every section's songs are imported, not just the first section's",
+            listOf("v1", "v2"),
+            page.items.map { it.id },
+        )
+    }
+
+    @Test
+    fun `a liked-songs page keeps its next token when the grid follows a header`() {
+        val page =
+            LibraryResponseParser.pageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "contents":{"singleColumnBrowseResultsRenderer":{"tabs":[
+                       {"tabRenderer":{"content":{"sectionListRenderer":{
+                         "contents":[
+                           {"itemSectionRenderer":{"contents":[
+                             {"musicSortFilterButtonRenderer":{"title":{"runs":[{"text":"Recently liked"}]}}}]}},
+                           {"gridRenderer":{"items":[${songRow("v1", "One")}],
+                             "continuations":[{"nextContinuationData":{"continuation":"PAGE2"}}]}}
+                         ]
+                       }}}}
+                     ]}}}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals("the grid's token is kept past the header section", "PAGE2", page.continuation)
+    }
+
+    @Test
+    fun `a continuation whose items arrive as a bare shelf is read`() {
+        // A continuation can carry its rows directly, without the section list that wraps a first
+        // page. Reading only the section list walk stopped the import at the first page.
+        val page =
+            LibraryResponseParser.continuationPageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "continuationContents":{"musicShelfContinuation":{
+                       "contents":[${songShelfRow("v1", "One")}],
+                       "continuations":[{"nextContinuationData":{"continuation":"PAGE3"}}]
+                     }}}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals(listOf("v1"), page.items.map { it.id })
+        assertEquals("PAGE3", page.continuation)
+    }
+
+    @Test
+    fun `a continuation whose items arrive in a bare grid is read`() {
+        val page =
+            LibraryResponseParser.continuationPageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "continuationContents":{"gridContinuation":{
+                       "items":[${songRow("v1", "One")}],
+                       "continuations":[{"nextContinuationData":{"continuation":"PAGE3"}}]
+                     }}}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals(listOf("v1"), page.items.map { it.id })
+        assertEquals("PAGE3", page.continuation)
+    }
+
+    @Test
+    fun `a continuation handed back as a command is read`() {
+        val page =
+            LibraryResponseParser.continuationPageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "onResponseReceivedCommands":[{"appendContinuationItemsCommand":{
+                       "continuationItems":[${songShelfRow("v1", "One")},
+                         {"continuationItemRenderer":{"continuationEndpoint":{"continuationCommand":{"token":"PAGE4"}}}}]
+                     }}]}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals(listOf("v1"), page.items.map { it.id })
+        assertEquals("PAGE4", page.continuation)
+    }
+
+    @Test
+    fun `a continuation reloaded rather than appended is read`() {
+        val page =
+            LibraryResponseParser.continuationPageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "onResponseReceivedActions":[{"reloadContinuationItemsAction":{
+                       "continuationItems":[${songShelfRow("v1", "One")}]
+                     }}]}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals(listOf("v1"), page.items.map { it.id })
+    }
+
+    @Test
+    fun `a continuation whose rows are two-row items is read`() {
+        val page =
+            LibraryResponseParser.continuationPageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "continuationContents":{"musicShelfContinuation":{
+                       "contents":[${songRow("v1", "One")}],
+                       "continuations":[{"nextContinuationData":{"continuation":"PAGE5"}}]
+                     }}}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals(listOf("v1"), page.items.map { it.id })
+        assertEquals("PAGE5", page.continuation)
+    }
+
+    @Test
+    fun `a continuation split across several sections imports every song`() {
+        val page =
+            LibraryResponseParser.continuationPageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "continuationContents":{"sectionListContinuation":{
+                       "contents":[
+                         {"gridRenderer":{"items":[${songRow("v1", "One")}]}},
+                         {"gridRenderer":{"items":[${songRow("v2", "Two")}],
+                           "continuations":[{"nextContinuationData":{"continuation":"PAGE6"}}]}}
+                       ]
+                     }}}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals(listOf("v1", "v2"), page.items.map { it.id })
+        assertEquals("PAGE6", page.continuation)
+    }
+
+    @Test
+    fun `a continuation whose rows are wrapped in an item section is read`() {
+        val page =
+            LibraryResponseParser.continuationPageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "continuationContents":{"sectionListContinuation":{
+                       "contents":[{"itemSectionRenderer":{"contents":[
+                         ${songShelfRow("v1", "One")},
+                         {"continuationItemViewModel":{"continuationCommand":{"token":"PAGE7"}}}]}}]
+                     }}}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals(listOf("v1"), page.items.map { it.id })
+        assertEquals("PAGE7", page.continuation)
+    }
+
+    @Test
     fun `every liked song is walked when the token arrives as a modern item`() {
         val first =
             LibraryResponseParser.pageOf(
