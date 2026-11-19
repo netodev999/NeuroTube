@@ -494,6 +494,18 @@ the build; make sure your own changed files are clean rather than chasing the wh
 5. GitHub Actions runs `spotlessCheck` before tests and builds. Add any future first-party Kotlin
 module to the Spotless target list explicitly.
 
+## Repository and release ownership
+
+The project lives at `github.com/netodev999/NeuroTube` (account `netodev999`). Every in-app link —
+the updater's `/releases/latest` endpoint, the About screen, the TV About pane, the crash-report URL,
+the issue templates, `SECURITY.md`, the README badges and `docs/index.html` — points there. The
+earlier `NETO-DEV66` account is suspended and must not be referenced anywhere.
+
+Releases are cut by pushing a `vX.Y.Z` tag: `.github/workflows/build.yml` builds, signs, verifies and
+publishes one universal APK named `NeuroTube-X.Y.Z-universal.apk` plus `checksums.txt`. The in-app
+updater picks that APK by name, so the naming must not change. Bump `versionCode` and `versionName`
+in `app/build.gradle.kts` before tagging, and add the release to `release-notes.md`.
+
 ## Building and testing your changes
 
 1. After making changes, build the relevant flavor to check for compilation errors, e.g.:
