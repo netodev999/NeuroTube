@@ -1,3 +1,38 @@
+# NeuroTube v1.5.13
+
+**Release date:** 2026-11-19
+
+A fix for the in-app updater. On a connection slower than about 375 KB/s the download stopped part
+way through — most visibly around 78% — and asking again stopped in the same place, so the update
+could never finish.
+
+## Fixes
+
+- **The download no longer has a deadline.** The updater shared the app's HTTP client, whose
+  one-minute call timeout covers the whole transfer. A 22 MB APK needs roughly 375 KB/s to finish
+  inside a minute, so anything slower was cut off near the end: the bar stopped around 78%, the
+  download was reported as failed, and the next attempt hit the same wall. Downloads now use a read
+  timeout instead, which only gives up when the connection goes silent, so a slow link is allowed to
+  take as long as it needs.
+- **A dropped transfer resumes instead of starting over.** The partial file is kept and the next
+  request asks for the bytes still missing (`Range`), with the digest covering what is already on
+  disk. A download interrupted at 78% continues from 78%.
+- **Retrying is automatic.** A transfer that drops is resumed up to five times with a short, growing
+  pause, so a flaky connection finishes without the user tapping retry. The notification says which
+  attempt is running.
+- **Tapping update no longer deletes the partial download.** Starting a download cleared the whole
+  update directory, including the part file a resume needs, which is why every retry began at zero.
+  Only other versions' files are removed now.
+- **A server that ignores the range request is handled.** If the whole file comes back instead of the
+  remainder, the part file is replaced rather than appended to, so the APK cannot be corrupted.
+- **Progress stays honest on a resume.** It is measured against the full APK size, not the bytes the
+  resumed attempt carries, so the bar no longer jumps.
+
+## Tests
+
+- New `UpdateTransferTest` covers resuming into a part file, the digest over the whole file,
+  progress against the full size, `Content-Range` parsing, and a server that ignores the range.
+
 # NeuroTube v1.5.12
 
 **Release date:** 2026-11-19

@@ -506,6 +506,24 @@ publishes one universal APK named `NeuroTube-X.Y.Z-universal.apk` plus `checksum
 updater picks that APK by name, so the naming must not change. Bump `versionCode` and `versionName`
 in `app/build.gradle.kts` before tagging, and add the release to `release-notes.md`.
 
+## The in-app updater
+
+The updater lives in `app/src/github/java/com/neurotube/app/updater/`. `UpdateDownloadWorker` fetches
+the APK through WorkManager; `AppUpdateInstaller` starts the work and hands the verified file to a
+package installer session. The pure transfer logic — range headers, `Content-Range` parsing, digest
+and progress — sits in `data/update/UpdateTransfer.kt` so it can be tested without a network.
+
+Never give a download a whole-transfer deadline. `NetworkModule.provideOkHttpClient` sets a
+one-minute call timeout, which is right for metadata but caps an APK transfer: a 22 MB file needs
+about 375 KB/s to finish in a minute, so slower connections were cancelled near the end and the
+update could never complete. The worker therefore clears the call timeout and relies on read and
+connect timeouts, which measure silence rather than total duration. Keep it that way.
+
+Downloads resume. The part file must survive between attempts — do not clear the update directory
+when a download starts, only other versions' files — and the digest has to be re-seeded from the
+bytes already on disk before each resumed attempt. Progress is measured against the full APK size,
+never the remaining bytes.
+
 ## Building and testing your changes
 
 1. After making changes, build the relevant flavor to check for compilation errors, e.g.:

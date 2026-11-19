@@ -17,10 +17,10 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkRequest
 import androidx.work.workDataOf
-import dagger.hilt.android.qualifiers.ApplicationContext
 import com.neurotube.app.data.update.AppRelease
 import com.neurotube.app.data.update.UpdateDownload
 import com.neurotube.app.data.update.UpdateFailure
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,7 +54,9 @@ class AppUpdateInstaller
 
         fun download(release: AppRelease) {
             val apk = release.apk ?: return
-            UpdateFiles.clean(context, keepVersion = null)
+            // Only other versions' files go: this version's part file is what a resumed download
+            // continues from, so clearing it here would restart the transfer from zero every time.
+            UpdateFiles.clean(context, keepVersion = release.version)
             val request =
                 OneTimeWorkRequestBuilder<UpdateDownloadWorker>()
                     .setInputData(
