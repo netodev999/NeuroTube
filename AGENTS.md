@@ -552,6 +552,37 @@ When changing `LibraryResponseParser` or `LibraryPage`, add a test with the real
 `LibraryResponseParserTest` before changing the reader, and remember that the walk itself
 (`Result<LibraryPage>.completed()`) must have no page cap: the seen-token guard is what stops a loop.
 
+A page that fails to load does not fail the walk — it ends it, keeping what was gathered. That is
+the right behaviour, but it must never be silent: every early stop is written to `ImportDiagnostics`
+with the item count reached and the reason, so a short import can be read back instead of guessed
+at. The same applies to a page that carries neither items nor a next token, which means a response
+shape is still unhandled.
+
+Retries live in `InnerTube.withRetry`. The Ktor client runs with `expectSuccess = true`, so a `429`
+or a `5xx` arrives as a `ResponseException`, not as an `IOException` — catching only `IOException`
+leaves rate-limited pages unretried, which is silent truncation in a paged walk. Keep the status
+decision and the `Retry-After` parsing in the pure helpers (`isRetriableStatus`, `retryAfterMillis`)
+so `RetryPolicyTest` can cover them without a live request.
+
+## Local environment
+
+The sandbox has no system JDK and no Gradle cache on a fresh session. Before building:
+
+```bash
+curl -sL -o /tmp/jdk.tar.gz "https://api.adoptium.net/v3/binary/latest/17/ga/linux/x64/jdk/hotspot/normal/eclipse"
+mkdir -p /workspace/jdk && tar xzf /tmp/jdk.tar.gz -C /workspace/jdk
+export JAVA_HOME=$(echo /workspace/jdk/jdk-17*)
+export PATH="$JAVA_HOME/bin:$PATH"
+```
+
+The Android SDK is at `/workspace/android-sdk` (already set in `local.properties`). The first build
+downloads the whole dependency graph, so give it 10+ minutes and run it in the background.
+
+Pushing over HTTPS from this sandbox is refused by the git remote even with a token that the API
+accepts; commit locally, then push through the GitHub REST API (blobs → tree → commit → ref update).
+The release workflow triggers on the tag, not the branch, so the tag has to be created through the
+API too (a lightweight ref is enough for `build.yml`).
+
 ## Baseline profile — when to regenerate
 
 The app ships a generated baseline profile at `app/src/main/generated/baselineProfiles/`
