@@ -136,6 +136,9 @@ class UpdateDownloadWorker(
                 .apply { if (range != null) header("Range", range) }
                 .build()
         client.newCall(request).execute().use { response ->
+            // A part file that already holds the whole file gets a 416 for a range past its end.
+            // Nothing is left to fetch, so the digest check decides whether what is on disk is good.
+            if (UpdateTransfer.partAlreadyComplete(response.code, start)) return
             if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
             val contentRange = response.header("Content-Range")
             val append = range != null && !UpdateTransfer.serverIgnoredRange(true, response.code)

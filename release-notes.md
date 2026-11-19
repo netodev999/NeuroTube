@@ -1,3 +1,21 @@
+# NeuroTube v1.5.14
+
+**Release date:** 2026-11-19
+
+A follow-up to v1.5.13's download fix, for a case the resume path made reachable.
+
+## Fixes
+
+- **A part file that already holds the whole APK is accepted.** Resuming asks for the bytes past the
+  end of what is on disk. If a previous attempt had finished writing but was interrupted before the
+  file was moved into place, that request is answered with `416 Range Not Satisfiable` and the
+  download was reported as failed even though the file was complete. It now proceeds to the digest
+  check, which is what decides whether the bytes are good.
+
+## Tests
+
+- `UpdateTransferTest` covers the `416` decision alongside the existing resume cases.
+
 # NeuroTube v1.5.13
 
 **Release date:** 2026-11-19

@@ -43,6 +43,13 @@ class UpdateTransferTest {
     }
 
     @Test
+    fun `a 416 on a resumed request means the part is whole, not that the download failed`() {
+        assertThat(UpdateTransfer.partAlreadyComplete(statusCode = 416, start = 4096)).isTrue()
+        assertThat(UpdateTransfer.partAlreadyComplete(statusCode = 416, start = 0)).isFalse()
+        assertThat(UpdateTransfer.partAlreadyComplete(statusCode = 200, start = 4096)).isFalse()
+    }
+
+    @Test
     fun `resuming appends to the part and the digest covers the whole file`() =
         runTest {
             val all = ByteArray(4096) { (it % 251).toByte() }

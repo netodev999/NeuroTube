@@ -55,6 +55,18 @@ internal object UpdateTransfer {
         statusCode: Int,
     ): Boolean = rangeRequested && statusCode != HTTP_PARTIAL_CONTENT
 
+    /**
+     * Whether a 416 means the part file already holds the whole file rather than that it is bad.
+     *
+     * Asking for a range past the end is only possible when the bytes before it are already on disk,
+     * which happens when a finished part file was left behind by an interrupted rename. The digest
+     * check that follows decides whether those bytes are the right ones.
+     */
+    fun partAlreadyComplete(
+        statusCode: Int,
+        start: Long,
+    ): Boolean = statusCode == HTTP_RANGE_NOT_SATISFIABLE && start > 0
+
     /** The digest of what [file] already holds, so a resumed download can keep hashing the whole file. */
     fun sha256Of(
         file: File,
@@ -135,5 +147,6 @@ internal object UpdateTransfer {
     fun backoffMillis(attempt: Int): Long = (1_000L shl (attempt - 1).coerceIn(0, 4)).coerceAtMost(16_000L)
 
     const val HTTP_PARTIAL_CONTENT = 206
+    const val HTTP_RANGE_NOT_SATISFIABLE = 416
     const val BUFFER_SIZE = 64 * 1024
 }
