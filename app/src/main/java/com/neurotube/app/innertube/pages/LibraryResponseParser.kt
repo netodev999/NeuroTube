@@ -7,6 +7,7 @@ import com.neurotube.app.innertube.models.SectionListRenderer
 import com.neurotube.app.innertube.models.YTItem
 import com.neurotube.app.innertube.models.continuationItemViewModelToken
 import com.neurotube.app.innertube.models.getContinuation
+import com.neurotube.app.innertube.models.getContinuations
 import com.neurotube.app.innertube.models.response.BrowseResponse
 
 /**
@@ -33,16 +34,21 @@ object LibraryResponseParser {
         // with a header or sort-chip section and carries its grid after it, so reading the first
         // section alone imported nothing; a page split across several sections imported only the
         // first one's share.
+        //
+        // Each section keeps its own token. Taking only the first one followed that list to the end
+        // and left the other lists' pages unread, which is how a long liked list imported short.
         val items = mutableListOf<YTItem>()
-        var continuation: String? = null
+        val continuations = mutableListOf<String>()
         for (section in sections) {
             val read = readSection(section) ?: continue
             items += read.items
-            if (continuation == null) continuation = read.continuation
+            continuations += read.continuations
         }
+        if (continuations.isEmpty() && fallback != null) continuations += fallback
         return LibraryPage(
             items = items,
-            continuation = continuation ?: fallback,
+            continuation = continuations.firstOrNull(),
+            continuations = continuations.distinct(),
         )
     }
 
@@ -55,6 +61,9 @@ object LibraryResponseParser {
                 continuation =
                     grid.continuations?.getContinuation()
                         ?: grid.items.trailingContinuation(),
+                continuations =
+                    grid.continuations.getContinuations()
+                        .ifEmpty { listOfNotNull(grid.items.trailingContinuation()) },
             )
         }
         section.musicPlaylistShelfRenderer?.let { return it.asSection() }
@@ -64,6 +73,7 @@ object LibraryResponseParser {
                 continuation =
                     shelf.continuations?.getContinuation()
                         ?: shelf.contents?.getContinuation(),
+                continuations = shelf.allContinuations(),
             )
         }
         val itemSection = section.itemSectionRenderer ?: return null
@@ -73,6 +83,9 @@ object LibraryResponseParser {
                 continuation =
                     grid.continuations?.getContinuation()
                         ?: grid.items.trailingContinuation(),
+                continuations =
+                    grid.continuations.getContinuations()
+                        .ifEmpty { listOfNotNull(grid.items.trailingContinuation()) },
             )
         }
         itemSection.musicShelfRenderer?.let { shelf ->
@@ -81,6 +94,7 @@ object LibraryResponseParser {
                 continuation =
                     shelf.continuations?.getContinuation()
                         ?: shelf.contents?.getContinuation(),
+                continuations = shelf.allContinuations(),
             )
         }
         val nestedGrid = itemSection.contents.orEmpty().firstNotNullOfOrNull { it.gridRenderer }
@@ -90,14 +104,22 @@ object LibraryResponseParser {
                 continuation =
                     nestedGrid.continuations?.getContinuation()
                         ?: nestedGrid.items.trailingContinuation(),
+                continuations =
+                    nestedGrid.continuations.getContinuations()
+                        .ifEmpty { listOfNotNull(nestedGrid.items.trailingContinuation()) },
             )
         }
         // The plain row list an item section carries directly.
         return LibraryPage(
             items = itemSection.contents.toItems(),
             continuation = itemSection.contents?.getContinuation(),
+            continuations = itemSection.contents.getContinuations(),
         )
     }
+
+    /** Every token a shelf carries, from its own continuation list and from its trailing rows. */
+    private fun MusicShelfRenderer.allContinuations(): List<String> =
+        continuations.getContinuations() + contents.getContinuations()
 
     /**
      * The token on the section list itself, when the page carries exactly one list-bearing section.
@@ -173,6 +195,9 @@ object LibraryResponseParser {
                 LibraryContinuationPage(
                     items = grid.items.toLibraryItems(),
                     continuation = grid.continuations?.getContinuation() ?: grid.items.trailingContinuation(),
+                    continuations =
+                        grid.continuations.getContinuations()
+                            .ifEmpty { listOfNotNull(grid.items.trailingContinuation()) },
                 )
             if (page.hasContent) return page
         }
@@ -180,19 +205,22 @@ object LibraryResponseParser {
         contents?.sectionListContinuation?.let { sectionList ->
             // A continuation of a grid is bare, but a continuation of a shelf repeats the section
             // list and puts the next token on the section list itself. Every section is read for the
-            // same reason the first page reads them all: a continuation can carry more than one.
+            // same reason the first page reads them all: a continuation can carry more than one, and
+            // each list keeps its own token so none of them is left half-read.
             val fallbackContinuation = sectionList.continuations?.getContinuation()
             val items = mutableListOf<YTItem>()
-            var continuation: String? = null
+            val continuations = mutableListOf<String>()
             for (section in sectionList.contents) {
                 val page = fromSlice(section = section, fallbackContinuation = null)
                 items += page.items
-                if (continuation == null) continuation = page.continuation
+                continuations += page.continuations
             }
+            if (continuations.isEmpty() && fallbackContinuation != null) continuations += fallbackContinuation
             val page =
                 LibraryContinuationPage(
                     items = items,
-                    continuation = continuation ?: fallbackContinuation,
+                    continuation = continuations.firstOrNull(),
+                    continuations = continuations.distinct(),
                 )
             if (page.hasContent) return page
         }
@@ -202,6 +230,7 @@ object LibraryResponseParser {
                 LibraryContinuationPage(
                     items = shelf.contents.toItems(),
                     continuation = shelf.continuations?.getContinuation() ?: shelf.contents?.getContinuation(),
+                    continuations = shelf.continuations.getContinuations() + shelf.contents.getContinuations(),
                 )
             if (page.hasContent) return page
         }
@@ -211,21 +240,24 @@ object LibraryResponseParser {
                 LibraryContinuationPage(
                     items = shelf.toItems(),
                     continuation = shelf.continuations?.getContinuation() ?: shelf.contents?.getContinuation(),
+                    continuations = shelf.continuations.getContinuations() + shelf.contents.getContinuations(),
                 )
             if (page.hasContent) return page
         }
 
         // A library page can hand its next slice back as an appended or reloaded list instead of as
-        // continuation contents; the token then rides on the last row. Both the action
-        // (`onResponseReceivedActions`) and the command (`onResponseReceivedCommands`) forms are
-        // served, and a walk that reads only the first shape stops at the page that uses the other.
+        // continuation contents; the token then rides on the last row. All three containers are
+        // served — actions, commands and endpoints — and a walk that reads only some of them stops
+        // at the page that uses another, which is how a long liked list imported short.
         val handed =
             response.continuationItemsOfActions()
                 ?: response.continuationItemsOfCommands()
+                ?: response.continuationItemsOfEndpoints()
         if (handed != null) {
             return LibraryContinuationPage(
                 items = handed.toItems(),
                 continuation = handed.getContinuation(),
+                continuations = handed.getContinuations(),
             )
         }
 
@@ -248,9 +280,17 @@ object LibraryResponseParser {
                     ?: command.reloadContinuationItemsCommand?.continuationItems
             }
 
+    /** The same, in the `onResponseReceivedEndpoints` form. */
+    private fun BrowseResponse.continuationItemsOfEndpoints(): List<MusicShelfRenderer.Content>? =
+        onResponseReceivedEndpoints
+            ?.firstNotNullOfOrNull { endpoint ->
+                endpoint.appendContinuationItemsAction?.continuationItems
+                    ?: endpoint.reloadContinuationItemsAction?.continuationItems
+            }
+
     /** Whether a page carried anything, so an empty container cannot shadow a fuller one. */
     private val LibraryContinuationPage.hasContent: Boolean
-        get() = items.isNotEmpty() || continuation != null
+        get() = items.isNotEmpty() || continuations.isNotEmpty()
 
     /** A playlist shelf read as the shelf shape the rest of this file works with. */
     private fun MusicPlaylistShelfRenderer.asSection(): LibraryPage =
@@ -259,6 +299,7 @@ object LibraryResponseParser {
             continuation =
                 continuations?.getContinuation()
                     ?: contents?.getContinuation(),
+            continuations = continuations.getContinuations() + contents.getContinuations(),
         )
 
     /**
@@ -286,9 +327,11 @@ object LibraryResponseParser {
         fallbackContinuation: String?,
     ): LibraryContinuationPage {
         val read = section?.let(::readSection)
+        val continuations = read?.continuations.orEmpty().ifEmpty { listOfNotNull(fallbackContinuation) }
         return LibraryContinuationPage(
             items = read?.items.orEmpty(),
-            continuation = read?.continuation ?: fallbackContinuation,
+            continuation = continuations.firstOrNull(),
+            continuations = continuations,
         )
     }
 

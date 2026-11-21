@@ -1379,4 +1379,123 @@ class LibraryResponseParserTest {
             (first.items + second.items).map { it.id },
         )
     }
+
+    @Test
+    fun `a page with two lists keeps both next tokens`() {
+        // A liked-songs tab can open with a header strip that carries its own token and put the
+        // songs after it. Keeping only the first token followed the header strip and left the songs
+        // half-read, which is how part of an account's likes never arrived.
+        val page =
+            LibraryResponseParser.pageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "contents":{"singleColumnBrowseResultsRenderer":{"tabs":[
+                       {"tabRenderer":{"content":{"sectionListRenderer":{"contents":[
+                         {"musicShelfRenderer":{
+                           "title":{"runs":[{"text":"Recent"}]},
+                           "contents":[
+                             ${songShelfRow("h1", "Header song")},
+                             {"continuationItemRenderer":{"continuationEndpoint":{
+                               "continuationCommand":{"token":"HEADER_NEXT"}}}}
+                           ]
+                         }},
+                         {"musicShelfRenderer":{
+                           "title":{"runs":[{"text":"Liked songs"}]},
+                           "contents":[
+                             ${songShelfRow("l1", "Liked one")},
+                             {"continuationItemRenderer":{"continuationEndpoint":{
+                               "continuationCommand":{"token":"LIKED_NEXT"}}}}
+                           ]
+                         }}
+                       ]}}}}
+                     ]}}}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals(
+            "both lists' tokens are kept, so neither list is left half-read",
+            listOf("HEADER_NEXT", "LIKED_NEXT"),
+            page.continuations,
+        )
+        assertEquals("the single-token field stays the first token", "HEADER_NEXT", page.continuation)
+        assertEquals(listOf("h1", "l1"), page.items.map { it.id })
+    }
+
+    @Test
+    fun `a continuation keeps every token its lists offer`() {
+        val page =
+            LibraryResponseParser.continuationPageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "continuationContents":{"sectionListContinuation":{"contents":[
+                       {"musicShelfRenderer":{"contents":[
+                         ${songShelfRow("a1", "First list")},
+                         {"continuationItemRenderer":{"continuationEndpoint":{
+                           "continuationCommand":{"token":"FIRST_NEXT"}}}}
+                       ]}},
+                       {"musicShelfRenderer":{"contents":[
+                         ${songShelfRow("b1", "Second list")},
+                         {"continuationItemRenderer":{"continuationEndpoint":{
+                           "continuationCommand":{"token":"SECOND_NEXT"}}}}
+                       ]}}
+                     ]}}}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals(listOf("FIRST_NEXT", "SECOND_NEXT"), page.continuations)
+        assertEquals(listOf("a1", "b1"), page.items.map { it.id })
+    }
+
+    @Test
+    fun `a token served as a continuation command is read`() {
+        // The modern `continuations` entry carries the token under `continuationCommand` rather than
+        // under `nextContinuationData`. Reading only the older key left the page with no token, so
+        // the walk ended after one page.
+        val page =
+            LibraryResponseParser.pageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "contents":{"singleColumnBrowseResultsRenderer":{"tabs":[
+                       {"tabRenderer":{"content":{"sectionListRenderer":{
+                         "contents":[{"gridRenderer":{
+                           "items":[${songRow("v1", "One")}],
+                           "continuations":[{"continuationCommand":{"token":"COMMAND_NEXT"}}]
+                         }}]
+                       }}}}
+                     ]}}}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals("COMMAND_NEXT", page.continuation)
+    }
+
+    @Test
+    fun `a page handed back as onResponseReceivedEndpoints is read`() {
+        // The third container a continuation can arrive in. Reading only actions and commands
+        // stopped at a page served this way, so the rest of a liked list never arrived.
+        val page =
+            LibraryResponseParser.continuationPageOf(
+                decode(
+                    """
+                    {"responseContext":{},
+                     "onResponseReceivedEndpoints":[
+                       {"appendContinuationItemsAction":{"continuationItems":[
+                         ${songShelfRow("v1", "One")},
+                         {"continuationItemRenderer":{"continuationEndpoint":{
+                           "continuationCommand":{"token":"ENDPOINT_NEXT"}}}}
+                       ]}}
+                     ]}
+                    """.trimIndent(),
+                ),
+            )
+
+        assertEquals(listOf("v1"), page.items.map { it.id })
+        assertEquals("ENDPOINT_NEXT", page.continuation)
+    }
 }

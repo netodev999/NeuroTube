@@ -18,6 +18,15 @@ import com.neurotube.app.utils.ThumbnailUrlResolver
 data class LibraryPage(
     val items: List<YTItem>,
     val continuation: String?,
+    /**
+     * Every next-page token this page's tab offered, not only the first.
+     *
+     * One tab can hold several lists — a header strip, then the songs — and each hands out its own
+     * token. Following only the first token walked one list and left the rest unread, which is how
+     * part of an account's liked songs never reached the app. [continuation] stays the single token
+     * a caller that only continues one list needs.
+     */
+    val continuations: List<String> = listOfNotNull(continuation),
 ) {
     companion object {
         fun fromMusicTwoRowItemRenderer(renderer: MusicTwoRowItemRenderer): YTItem? {

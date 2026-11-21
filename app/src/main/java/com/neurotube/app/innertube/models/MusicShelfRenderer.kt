@@ -71,12 +71,15 @@ data class MusicShelfRenderer(
 
 fun List<MusicShelfRenderer.Content>.getItems(): List<MusicResponsiveListItemRenderer> = mapNotNull { it.musicResponsiveListItemRenderer }
 
-/** The next-page token of a shelf: the older `continuationItemRenderer`, or the modern view model. */
-fun List<MusicShelfRenderer.Content>.getContinuation(): String? =
-    firstNotNullOfOrNull { content ->
+/** Every next-page token a shelf's rows carry, in order. */
+fun List<MusicShelfRenderer.Content>?.getContinuations(): List<String> =
+    this.orEmpty().mapNotNull { content ->
         content.continuationItemRenderer
             ?.continuationEndpoint
             ?.continuationCommand
             ?.token
             ?: content.continuationItemViewModel?.continuationItemViewModelToken()
     }
+
+/** The next-page token of a shelf: the older `continuationItemRenderer`, or the modern view model. */
+fun List<MusicShelfRenderer.Content>?.getContinuation(): String? = getContinuations().firstOrNull()

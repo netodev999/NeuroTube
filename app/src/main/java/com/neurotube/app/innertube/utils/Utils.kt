@@ -42,42 +42,47 @@ suspend fun Result<LibraryPage>.completed(): Result<LibraryPage> =
     runCatching {
         val page = getOrThrow()
         val items = page.items.toMutableList()
-        var continuation = page.continuation
         val seenContinuations = mutableSetOf<String>()
+        // A library page can offer several lists, each with its own next-page token. Walking only
+        // the first token followed that one list to its end and left the others unread, so a long
+        // liked list imported short. Every token is queued and drained instead, which reads each
+        // list to its end no matter how many the page started with.
+        val pending = ArrayDeque(page.continuations)
 
         // Every page is walked. A cap used to stop the walk after 50 pages, which silently truncated
         // the list of anyone with more likes than that; the seen-token set is what actually keeps a
         // loop from running forever, so a large library is imported whole.
-        while (continuation != null) {
+        while (pending.isNotEmpty()) {
+            val continuation = pending.removeFirst()
             // Prevent infinite loops by tracking seen continuations
-            if (!seenContinuations.add(continuation)) break
+            if (!seenContinuations.add(continuation)) continue
 
-            // A page that fails to load stops the walk but keeps everything gathered so far, so one
-            // bad response cannot discard a whole library. It is recorded either way: a walk that
-            // ends early is the difference between a short list and a complete one, and a silent
-            // stop is what made a truncated import look like a successful one.
+            // A page that fails to load stops its branch but keeps everything gathered so far, so
+            // one bad response cannot discard a whole library. It is recorded either way: a walk
+            // that ends early is the difference between a short list and a complete one, and a
+            // silent stop is what made a truncated import look like a successful one.
             val next = YouTube.libraryContinuation(continuation)
             val continuationPage = next.getOrNull()
             if (continuationPage == null) {
                 ImportDiagnostics.record(
-                    "library walk: stopped after ${items.size} items, page failed " +
+                    "library walk: branch stopped after ${items.size} items, page failed " +
                         describeFailure(next.exceptionOrNull()!!),
                 )
-                break
+                continue
             }
-            if (continuationPage.items.isEmpty() && continuationPage.continuation == null) {
+            if (continuationPage.items.isEmpty() && continuationPage.continuations.isEmpty()) {
                 // A page the parser could not read: it carries neither items nor a next token, so
-                // the walk cannot go on. Recorded because it means a shape is still unhandled.
+                // this branch cannot go on. Recorded because it means a shape is still unhandled.
                 ImportDiagnostics.record(
-                    "library walk: stopped after ${items.size} items, page carried nothing",
+                    "library walk: branch stopped after ${items.size} items, page carried nothing",
                 )
-                break
+                continue
             }
             items += continuationPage.items
-            continuation = continuationPage.continuation
+            pending += continuationPage.continuations
         }
         LibraryPage(
-            items = items,
+            items = items.distinctBy { it.id },
             continuation = page.continuation,
         )
     }

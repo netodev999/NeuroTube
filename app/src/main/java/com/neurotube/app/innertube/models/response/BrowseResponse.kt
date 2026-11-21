@@ -23,6 +23,9 @@ data class BrowseResponse(
     // A library continuation can answer with a command rather than an action; a walk that reads only
     // one of the two forms stops at the page that uses the other and imports a short list.
     val onResponseReceivedCommands: List<ResponseCommand>? = null,
+    // The third form the same page can use. A liked-songs walk that reads only the first two shapes
+    // ends at the page served this way, which is what left an account's later likes unimported.
+    val onResponseReceivedEndpoints: List<ResponseEndpoint>? = null,
     val header: Header? = null,
     val microformat: Microformat? = null,
     val responseContext: ResponseContext,
@@ -88,6 +91,24 @@ data class BrowseResponse(
     data class ResponseCommand(
         val appendContinuationItemsCommand: ContinuationItems? = null,
         val reloadContinuationItemsCommand: ContinuationItems? = null,
+    ) {
+        @Serializable
+        data class ContinuationItems(
+            val continuationItems: List<MusicShelfRenderer.Content>? = null,
+        )
+    }
+
+    /**
+     * The `onResponseReceivedEndpoints` form, the third way a library hands back its next slice.
+     *
+     * It names the same two shapes under different keys: `appendContinuationItemsAction` for an
+     * append and `reloadContinuationItemsAction` for a reload. A walk that reads only the command
+     * and action containers stops at a page served this way.
+     */
+    @Serializable
+    data class ResponseEndpoint(
+        val appendContinuationItemsAction: ContinuationItems? = null,
+        val reloadContinuationItemsAction: ContinuationItems? = null,
     ) {
         @Serializable
         data class ContinuationItems(

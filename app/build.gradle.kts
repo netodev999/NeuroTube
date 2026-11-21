@@ -67,8 +67,8 @@ android {
         applicationId = "com.neurotube.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 24
-        versionName = "1.5.15"
+        versionCode = 25
+        versionName = "1.6.0"
 
         buildConfigField("String", "APP_LANGUAGE_TAGS", "\"${(listOf("en") + translatedLocaleTags()).joinToString(",")}\"")
         // Discord Rich Presence stays off until a Discord application is registered for NeuroTube.
