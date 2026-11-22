@@ -2,6 +2,7 @@ package com.neurotube.app.account
 
 import com.google.common.truth.Truth.assertThat
 import com.neurotube.app.data.model.Channel
+import com.neurotube.app.data.model.Video
 import com.neurotube.app.innertube.models.AlbumItem
 import com.neurotube.app.innertube.models.Artist
 import com.neurotube.app.innertube.models.ArtistItem
@@ -128,6 +129,43 @@ class AccountLibraryMapperTest {
         val likes = listOf(song("v1", "First"), song("v1", "First")).toLikedSongs(now = 1000L)
 
         assertThat(likes).hasSize(1)
+    }
+
+    private fun testVideo(
+        id: String,
+        title: String,
+        channelName: String = "Test Channel",
+        channelId: String = "UCtest",
+        duration: Int = 180,
+        category: String? = null,
+        isMusic: Boolean = false,
+    ) = Video(
+        id = id,
+        title = title,
+        channelName = channelName,
+        channelId = channelId,
+        thumbnailUrl = "https://i.ytimg.com/vi/$id/hq.jpg",
+        duration = duration,
+        viewCount = 1000L,
+        uploadDate = "1 day ago",
+        category = category,
+        isMusic = isMusic,
+    )
+
+    @Test
+    fun `liked videos with music category or markers land in music likes`() {
+        val videos =
+            listOf(
+                testVideo("m1", "Song Title", category = "Music"),
+                testVideo("m2", "Artist - Track (Official Video)"),
+                testVideo("v1", "Regular Vlog Video", category = "People & Blogs"),
+            ).toLikedVideos(now = 2000L)
+
+        val musicLikes = videos.filter { it.isMusic }
+        val videoLikes = videos.filter { !it.isMusic }
+
+        assertThat(musicLikes.map { it.videoId }).containsExactly("m1", "m2").inOrder()
+        assertThat(videoLikes.map { it.videoId }).containsExactly("v1")
     }
 
     private fun playlist(

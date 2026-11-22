@@ -3,6 +3,8 @@ package com.neurotube.app.account
 import com.neurotube.app.data.local.ChannelSubscription
 import com.neurotube.app.data.local.LikedVideoInfo
 import com.neurotube.app.data.model.Channel
+import com.neurotube.app.data.model.Video
+import com.neurotube.app.data.repository.looksLikeMusicVideo
 import com.neurotube.app.innertube.models.AlbumItem
 import com.neurotube.app.innertube.models.ArtistItem
 import com.neurotube.app.innertube.models.PlaylistItem
@@ -117,6 +119,31 @@ internal fun List<YTItem>.toLikedSongs(now: Long): List<LikedVideoInfo> =
                 isMusic = true,
                 channelId = song.artists.firstOrNull()?.id,
                 durationSeconds = song.duration ?: 0,
+            )
+        }
+
+/**
+ * The videos a signed-in account has liked on youtube.com, mapped into [LikedVideoInfo].
+ *
+ * Videos identified as music (by category, flag, or known music channel/title markers) are marked
+ * with [isMusic] = true so they land in Liked Music, while other videos land in Liked Videos.
+ */
+internal fun List<Video>.toLikedVideos(now: Long): List<LikedVideoInfo> =
+    distinctBy { it.id }
+        .mapIndexed { index, video ->
+            val isMusic =
+                video.isMusic ||
+                    video.category.equals("Music", ignoreCase = true) ||
+                    looksLikeMusicVideo(video.title, video.channelName)
+            LikedVideoInfo(
+                videoId = video.id,
+                title = video.title,
+                thumbnail = video.thumbnailUrl,
+                channelName = video.channelName,
+                likedAt = now - index,
+                isMusic = isMusic,
+                channelId = video.channelId.takeIf { it.isNotBlank() },
+                durationSeconds = video.duration,
             )
         }
 

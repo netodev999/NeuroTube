@@ -915,15 +915,34 @@ object YouTube {
         runCatching {
             val body =
                 innerTube
-                    .channelBrowse(
-                        client = currentWebClient(),
-                        channelId = "VLWL".takeIf { continuation == null },
-                        params = null,
+                    .mainSiteBrowse(
+                        client = WEB_AUTHENTICATED,
+                        browseId = if (continuation == null) "VLWL" else null,
                         continuation = continuation,
+                        setLogin = true,
                     ).bodyAsText()
             if (ImportDiagnostics.recording) logResponse("watchLater", 200, body)
             Json.parseToJsonElement(body).toVideoPlaylistPage()
         }.onFailure { error -> if (ImportDiagnostics.recording) logFailure("watchLater", error) }
+
+    /**
+     * The viewer's Liked Videos list from youtube.com, one page at a time.
+     *
+     * `VLLL` is the special playlist behind it, and it is paged like any other playlist page.
+     */
+    suspend fun likedVideos(continuation: String? = null): Result<VideoPlaylistPage> =
+        runCatching {
+            val body =
+                innerTube
+                    .mainSiteBrowse(
+                        client = WEB_AUTHENTICATED,
+                        browseId = if (continuation == null) "VLLL" else null,
+                        continuation = continuation,
+                        setLogin = true,
+                    ).bodyAsText()
+            if (ImportDiagnostics.recording) logResponse("likedVideos", 200, body)
+            Json.parseToJsonElement(body).toVideoPlaylistPage()
+        }.onFailure { error -> if (ImportDiagnostics.recording) logFailure("likedVideos", error) }
 
     suspend fun videoPlaylistPage(
         playlistId: String,

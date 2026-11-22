@@ -15,7 +15,7 @@ suspend fun Result<PlaylistPage>.completed(): Result<PlaylistPage> =
         var continuation = page.songsContinuation
         val seenContinuations = mutableSetOf<String>()
         var requestCount = 0
-        val maxRequests = 50 // Prevent excessive API calls
+        val maxRequests = 150 // Prevent excessive API calls
 
         while (continuation != null && requestCount < maxRequests) {
             // Prevent infinite loops by tracking seen continuations

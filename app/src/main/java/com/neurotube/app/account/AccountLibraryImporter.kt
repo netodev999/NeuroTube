@@ -38,7 +38,8 @@ import javax.inject.Singleton
 private const val TAG = "AccountLibraryImport"
 
 /** The music library's browse ids, one per kind of thing a viewer keeps there. */
-private const val LIBRARY_LIKED_SONGS = "FEmusic_liked_videos"
+private const val LIBRARY_LIKED_SONGS_VLLM = "VLLM"
+private const val LIBRARY_LIKED_SONGS_FALLBACK = "FEmusic_liked_videos"
 private const val LIBRARY_ARTISTS = "FEmusic_library_corpus_artists"
 private const val LIBRARY_PLAYLISTS = "FEmusic_liked_playlists"
 private const val LIBRARY_ALBUMS = "FEmusic_liked_albums"
@@ -143,9 +144,12 @@ class AccountLibraryImport
                 }
 
                 onProgress(AccountImportState.Running(AccountImportStep.LIKED_SONGS))
-                val songs = fetchPart(AccountImportStep.LIKED_SONGS, steps) { fetchLibrary(LIBRARY_LIKED_SONGS) }
-                if (songs.isNotEmpty()) {
-                    runCatching { likedVideos.importLikes(songs.toLikedSongs(System.currentTimeMillis())) }
+                val songs = fetchPart(AccountImportStep.LIKED_SONGS, steps) { fetchLikedMusic() }
+                val videoLikes = fetchLikedVideosQuietly()
+                val now = System.currentTimeMillis()
+                val allLikes = (songs.toLikedSongs(now) + videoLikes.toLikedVideos(now)).distinctBy { it.videoId }
+                if (allLikes.isNotEmpty()) {
+                    runCatching { likedVideos.importLikes(allLikes) }
                         .onSuccess { report = report.copy(likedSongs = it.size) }
                         .onFailure { Log.w(TAG, "Importing liked songs failed", it) }
                 }
@@ -271,6 +275,38 @@ class AccountLibraryImport
                     val page = result.getOrThrow()
                     ImportDiagnostics.record(
                         "watchLater page ${pages + 1}: videos=${page.videos.size} next=${page.continuation != null}",
+                    )
+                    all += page.videos
+                    continuation = page.continuation
+                    pages++
+                } while (continuation != null && pages < MAX_CHANNEL_PAGES)
+
+                all.distinctBy { it.id }
+            }
+
+        private suspend fun fetchLikedMusic(): List<YTItem> {
+            val vllm = runCatching { fetchLibrary(LIBRARY_LIKED_SONGS_VLLM) }.getOrDefault(emptyList())
+            if (vllm.isNotEmpty()) return vllm
+            return runCatching { fetchLibrary(LIBRARY_LIKED_SONGS_FALLBACK) }.getOrDefault(emptyList())
+        }
+
+        /** The account's Liked Videos list from youtube.com, paged to the end. */
+        private suspend fun fetchLikedVideosQuietly(): List<Video> =
+            withContext(Dispatchers.IO) {
+                val all = mutableListOf<Video>()
+                var continuation: String? = null
+                var pages = 0
+                do {
+                    val result = YouTube.likedVideos(continuation)
+                    if (result.isFailure) {
+                        ImportDiagnostics.record(
+                            "likedVideos page ${pages + 1}: FAILED ${describeFailure(result.exceptionOrNull()!!)}",
+                        )
+                        break
+                    }
+                    val page = result.getOrThrow()
+                    ImportDiagnostics.record(
+                        "likedVideos page ${pages + 1}: videos=${page.videos.size} next=${page.continuation != null}",
                     )
                     all += page.videos
                     continuation = page.continuation
