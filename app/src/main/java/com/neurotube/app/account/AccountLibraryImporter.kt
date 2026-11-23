@@ -375,7 +375,6 @@ class AccountLibraryImport
                 }
                 LikedSongsFetch(songs.distinctBy { it.id }, first.trackCount, error)
             }
-        }
 
         /** The account's Liked Videos list from youtube.com, paged to the end. */
         private suspend fun fetchLikedVideos(steps: MutableList<ImportStepDiagnostic>): List<Video> =
