@@ -59,6 +59,32 @@ class LikedVideoRecordTest {
     }
 
     @Test
+    fun `account import upgrades an existing video record to a liked song`() {
+        val stored = LikedVideoInfo("abc", "Old title", "old thumbnail", "Channel", likedAt = 42L)
+        val imported =
+            LikedVideoInfo(
+                "abc",
+                "Song title",
+                "song thumbnail",
+                "Artist",
+                likedAt = 100L,
+                isMusic = true,
+                channelId = "UCartist",
+                durationSeconds = 245,
+            )
+
+        val merged = stored.mergeAccountImport(imported)
+
+        assertThat(merged.title).isEqualTo("Song title")
+        assertThat(merged.thumbnail).isEqualTo("song thumbnail")
+        assertThat(merged.channelName).isEqualTo("Artist")
+        assertThat(merged.likedAt).isEqualTo(42L)
+        assertThat(merged.isMusic).isTrue()
+        assertThat(merged.channelId).isEqualTo("UCartist")
+        assertThat(merged.durationSeconds).isEqualTo(245)
+    }
+
+    @Test
     fun `undone likes go back where they were by date`() {
         val order = listOf("c", "a")
         val dated = listOf("c" to 30L, "a" to 10L, "b" to 20L, "d" to 40L)

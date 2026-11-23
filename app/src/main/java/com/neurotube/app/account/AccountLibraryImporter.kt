@@ -15,6 +15,7 @@ import com.neurotube.app.data.music.model.PlaylistDetails
 import com.neurotube.app.data.recommendation.FlowNeuroEngine
 import com.neurotube.app.innertube.YouTube
 import com.neurotube.app.innertube.models.ArtistItem
+import com.neurotube.app.innertube.models.SongItem
 import com.neurotube.app.innertube.models.YTItem
 import com.neurotube.app.innertube.pages.AccountVideoCollection
 import com.neurotube.app.innertube.utils.completed
@@ -48,6 +49,12 @@ private const val LIBRARY_ALBUMS = "FEmusic_liked_albums"
 
 /** How many lookups to run at once. Each collection is a full playlist, so this stays small. */
 private const val PARALLELISM = 3
+
+private data class LikedSongsFetch(
+    val songs: List<SongItem>,
+    val advertisedCount: Int?,
+    val error: String? = null,
+)
 
 /** The parts of a library, in the order they are brought in. */
 enum class AccountImportStep {
@@ -143,12 +150,12 @@ class AccountLibraryImport
                 }
 
                 onProgress(AccountImportState.Running(AccountImportStep.LIKED_SONGS))
-                val songs = fetchPart(AccountImportStep.LIKED_SONGS, steps) { fetchLikedMusic() }
+                val songs = fetchPart(AccountImportStep.LIKED_SONGS, steps) { fetchLikedMusic(steps) }
                 val videoLikes = fetchPart(AccountImportStep.LIKED_SONGS, steps) { fetchLikedVideos(steps) }
                 val now = System.currentTimeMillis()
                 val allLikes = (songs.toLikedSongs(now) + videoLikes.toLikedVideos(now)).distinctBy { it.videoId }
                 if (allLikes.isNotEmpty()) {
-                    runCatching { likedVideos.importLikes(allLikes) }
+                    runCatching { likedVideos.importAccountLikes(allLikes) }
                         .onSuccess { report = report.copy(likedSongs = it.size) }
                         .onFailure { Log.w(TAG, "Importing liked songs failed", it) }
                 }
@@ -283,15 +290,91 @@ class AccountLibraryImport
                 all.distinctBy { it.id }
             }
 
-        private suspend fun fetchLikedMusic(): List<YTItem> {
-            val primary = runCatching { fetchLibrary(LIBRARY_LIKED_SONGS_VLLM) }
-            val vllm = primary.getOrNull().orEmpty()
-            if (vllm.isNotEmpty()) return vllm
-            return runCatching { fetchLibrary(LIBRARY_LIKED_SONGS_FALLBACK) }
-                .getOrElse { fallbackError ->
-                    primary.exceptionOrNull()?.let(fallbackError::addSuppressed)
-                    throw fallbackError
+        private suspend fun fetchLikedMusic(steps: MutableList<ImportStepDiagnostic>): List<YTItem> {
+            val playlistResult = runCatching { fetchLikedMusicPlaylist() }
+            val playlistFetch = playlistResult.getOrNull()
+            val playlistSongs = playlistFetch?.songs.orEmpty()
+            val expectedCount = playlistFetch?.advertisedCount
+            val needsFallback =
+                playlistResult.isFailure ||
+                    playlistSongs.isEmpty() ||
+                    playlistFetch?.error != null ||
+                    (expectedCount != null && playlistSongs.size < expectedCount)
+
+            if (!needsFallback) {
+                ImportDiagnostics.record("likedMusic source=playlist songs=${playlistSongs.size} expected=$expectedCount")
+                return playlistSongs
+            }
+
+            ImportDiagnostics.record(
+                "likedMusic playlist source incomplete: songs=${playlistSongs.size} expected=$expectedCount " +
+                    "error=${playlistFetch?.error ?: playlistResult.exceptionOrNull()?.let(::describeFailure)}; trying VLLM library",
+            )
+            val libraryResult = runCatching { fetchLibrary(LIBRARY_LIKED_SONGS_VLLM).filterIsInstance<SongItem>() }
+            val librarySongs = libraryResult.getOrNull().orEmpty()
+            val songs = if (librarySongs.size > playlistSongs.size) librarySongs else playlistSongs
+            val sourceError =
+                when {
+                    expectedCount != null && songs.size < expectedCount ->
+                        "Only ${songs.size} of $expectedCount liked songs were read"
+                    songs.isEmpty() && playlistResult.isFailure && libraryResult.isFailure ->
+                        "Both liked-song sources failed: ${describeFailure(playlistResult.exceptionOrNull()!!)}; " +
+                            describeFailure(libraryResult.exceptionOrNull()!!)
+                    songs.isEmpty() && playlistResult.isFailure ->
+                        "The playlist source failed and the VLLM library returned no song rows: " +
+                            describeFailure(playlistResult.exceptionOrNull()!!)
+                    songs.isEmpty() && libraryResult.isFailure ->
+                        "The VLLM library source failed and the playlist source returned no song rows: " +
+                            describeFailure(libraryResult.exceptionOrNull()!!)
+                    songs.isEmpty() && expectedCount != null && expectedCount > 0 ->
+                        "YouTube reports $expectedCount liked songs but neither source returned a song row"
+                    playlistFetch?.error != null && (libraryResult.isFailure || librarySongs.size < playlistSongs.size) ->
+                        playlistFetch.error
+                    else -> null
                 }
+            if (sourceError != null) {
+                ImportDiagnostics.record("likedMusic incomplete: $sourceError; items=${songs.size}")
+                steps += ImportStepDiagnostic("LIKED_SONGS", songs.size, sourceError)
+            }
+            return songs
+        }
+
+        private suspend fun fetchLikedMusicPlaylist(): LikedSongsFetch =
+            withContext(Dispatchers.IO) {
+                val first = YouTube.playlist("LM").getOrThrow()
+                val songs = first.songs.toMutableList()
+                val seenContinuations = mutableSetOf<String>()
+                val pending = ArrayDeque(listOfNotNull(first.songsContinuation, first.continuation).distinct())
+                var pages = 1
+                var error: String? = null
+                ImportDiagnostics.record(
+                    "likedMusic playlist page 1: songs=${first.songs.size} expected=${first.trackCount} " +
+                        "continuations=${pending.size}",
+                )
+                while (pending.isNotEmpty()) {
+                    val continuation = pending.removeFirst()
+                    if (!seenContinuations.add(continuation)) {
+                        error = error ?: "Repeated continuation after $pages pages"
+                        continue
+                    }
+                    val result = YouTube.playlistContinuation(continuation)
+                    if (result.isFailure) {
+                        error = error ?: "Page ${pages + 1} failed: ${describeFailure(result.exceptionOrNull()!!)}"
+                        continue
+                    }
+                    val page = result.getOrThrow()
+                    songs += page.songs
+                    pages++
+                    page.continuations.forEach { next ->
+                        if (next !in seenContinuations && next !in pending) pending.addLast(next)
+                    }
+                    ImportDiagnostics.record(
+                        "likedMusic playlist page $pages: songs=${page.songs.size} total=${songs.size} " +
+                            "continuations=${page.continuations.size}",
+                    )
+                }
+                LikedSongsFetch(songs.distinctBy { it.id }, first.trackCount, error)
+            }
         }
 
         /** The account's Liked Videos list from youtube.com, paged to the end. */

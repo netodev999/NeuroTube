@@ -1801,48 +1801,70 @@ object YouTube {
 
             val editable = base?.musicEditablePlaylistDetailHeaderRenderer != null
 
+            val playlistShelf =
+                response.contents
+                    ?.twoColumnBrowseResultsRenderer
+                    ?.secondaryContents
+                    ?.sectionListRenderer
+                    ?.contents
+                    ?.firstNotNullOfOrNull { it.musicPlaylistShelfRenderer }
+            val parsedLibraryPage = LibraryResponseParser.pageOf(response)
+            val songs =
+                (
+                    playlistShelf
+                        ?.contents
+                        ?.getItems()
+                        ?.mapNotNull { PlaylistPage.fromMusicResponsiveListItemRenderer(it) }
+                        .orEmpty() + parsedLibraryPage.items.filterIsInstance<SongItem>()
+                ).distinctBy { it.id }
+            val songsContinuation = playlistShelf?.contents?.getContinuation()
+            val sectionContinuation =
+                response.contents
+                    ?.twoColumnBrowseResultsRenderer
+                    ?.secondaryContents
+                    ?.sectionListRenderer
+                    ?.continuations
+                    ?.getContinuation()
+                    ?: parsedLibraryPage.continuation
+
             PlaylistPage(
                 playlist =
                     PlaylistItem(
                         id = playlistId,
-                        title =
-                            header
-                                ?.title
-                                ?.runs
-                                ?.firstOrNull()
-                                ?.text!!,
+                        title = header?.title?.runs?.firstOrNull()?.text.orEmpty(),
                         author =
-                            header.straplineTextOne?.runs?.firstOrNull()?.let {
+                            header?.straplineTextOne?.runs?.firstOrNull()?.let {
                                 Artist(
                                     name = it.text,
                                     id = it.navigationEndpoint?.browseEndpoint?.browseId,
                                 )
                             },
                         songCountText =
-                            header.secondSubtitle
+                            header?.secondSubtitle
                                 ?.runs
                                 ?.firstOrNull()
                                 ?.text,
                         thumbnail =
-                            header.thumbnail
+                            header?.thumbnail
                                 ?.musicThumbnailRenderer
                                 ?.thumbnail
                                 ?.thumbnails
                                 ?.lastOrNull()
-                                ?.url!!,
+                                ?.url
+                                ?: songs.firstOrNull()?.thumbnail,
                         playEndpoint = null,
                         shuffleEndpoint =
-                            header.buttons
-                                .lastOrNull()
+                            header?.buttons
+                                ?.lastOrNull()
                                 ?.menuRenderer
                                 ?.items
                                 ?.firstOrNull()
                                 ?.menuNavigationItemRenderer
                                 ?.navigationEndpoint
-                                ?.watchPlaylistEndpoint!!,
+                                ?.watchPlaylistEndpoint,
                         radioEndpoint =
-                            header.buttons
-                                .getOrNull(2)
+                            header?.buttons
+                                ?.getOrNull(2)
                                 ?.menuRenderer
                                 ?.items
                                 ?.find {
@@ -1852,37 +1874,10 @@ object YouTube {
                                 ?.watchPlaylistEndpoint,
                         isEditable = editable,
                     ),
-                songs =
-                    response.contents
-                        ?.twoColumnBrowseResultsRenderer
-                        ?.secondaryContents
-                        ?.sectionListRenderer
-                        ?.contents
-                        ?.firstOrNull()
-                        ?.musicPlaylistShelfRenderer
-                        ?.contents
-                        ?.getItems()
-                        ?.mapNotNull {
-                            PlaylistPage.fromMusicResponsiveListItemRenderer(it)
-                        } ?: emptyList(),
-                songsContinuation =
-                    response.contents
-                        ?.twoColumnBrowseResultsRenderer
-                        ?.secondaryContents
-                        ?.sectionListRenderer
-                        ?.contents
-                        ?.firstOrNull()
-                        ?.musicPlaylistShelfRenderer
-                        ?.contents
-                        ?.getContinuation(),
-                continuation =
-                    response.contents
-                        ?.twoColumnBrowseResultsRenderer
-                        ?.secondaryContents
-                        ?.sectionListRenderer
-                        ?.continuations
-                        ?.getContinuation(),
-                trackCount = PlaylistPage.trackCountFrom(header.secondSubtitle),
+                songs = songs,
+                songsContinuation = songsContinuation,
+                continuation = sectionContinuation,
+                trackCount = PlaylistPage.trackCountFrom(header?.secondSubtitle),
             )
         }
 
@@ -1897,49 +1892,14 @@ object YouTube {
                         setLogin = true,
                     ).body<BrowseResponse>()
 
-            val mainContents =
-                response.continuationContents
-                    ?.sectionListContinuation
-                    ?.contents
-                    ?.flatMap { it.musicPlaylistShelfRenderer?.contents.orEmpty() }
-                    ?: emptyList()
-
-            val appendedContents =
-                response.onResponseReceivedActions
-                    ?.firstOrNull()
-                    ?.appendContinuationItemsAction
-                    ?.continuationItems
-                    .orEmpty()
-
-            val allContents = mainContents + appendedContents
-
+            val parsed = LibraryResponseParser.continuationPageOf(response)
             val songs =
-                allContents
-                    .mapNotNull { it.musicResponsiveListItemRenderer }
-                    .mapNotNull { PlaylistPage.fromMusicResponsiveListItemRenderer(it) }
-
-            val nextContinuation =
-                response.continuationContents
-                    ?.sectionListContinuation
-                    ?.continuations
-                    ?.getContinuation()
-                    ?: response.continuationContents
-                        ?.musicPlaylistShelfContinuation
-                        ?.continuations
-                        ?.getContinuation()
-                    ?: response.continuationContents
-                        ?.musicShelfContinuation
-                        ?.continuations
-                        ?.getContinuation()
-                    ?: response.onResponseReceivedActions
-                        ?.firstOrNull()
-                        ?.appendContinuationItemsAction
-                        ?.continuationItems
-                        ?.getContinuation()
+                parsed.items.filterIsInstance<SongItem>()
 
             PlaylistContinuationPage(
                 songs = songs,
-                continuation = nextContinuation,
+                continuation = parsed.continuation,
+                continuations = parsed.continuations,
             )
         }
 

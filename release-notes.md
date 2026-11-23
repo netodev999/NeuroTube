@@ -1,12 +1,12 @@
-# NeuroTube v1.6.2
+# NeuroTube v1.6.3
 
 **Release date:** 2026-11-23
 
-Combines liked songs and videos under one Likes entry and fixes incomplete signed-in likes imports.
+Restores YouTube Music liked-only songs to the unified Likes list and refreshes existing song likes.
 
 ## Fixes
 
-- **One Likes category:** The Library now shows videos and songs together in the same Likes shelf and list.
-- **Complete likes paging:** The signed-in YouTube likes list follows continuation tokens until the end, including response-endpoint continuation pages. A repeated token or failed page is recorded with the partial count, and an incomplete import is eligible to retry on a later launch.
-- **Accurate list parsing:** Playlist video renderers and continuation actions, commands, and endpoints are handled when reading YouTube liked videos.
-- **Existing accounts:** The account-import version is bumped again so signed-in users receive this fix automatically.
+- **YouTube Music liked songs:** Read the special `LM`/`VLLM` song playlist through the music playlist parser, with the library parser as a fallback. Both song and video likes remain in one Likes list.
+- **Refresh existing song records:** If a song ID was already stored from the video likes list, account import updates its song classification and metadata without changing its local like date or order.
+- **Complete song paging:** Follow every continuation until exhausted, record partial failures, and retry incomplete account imports on a later launch.
+- **Existing accounts:** The account-import version is bumped so current users receive the corrected songs import automatically.

@@ -168,6 +168,35 @@ class LikedVideosRepository private constructor(
         return added
     }
 
+    suspend fun importAccountLikes(likes: List<LikedVideoInfo>): List<LikedVideoInfo> {
+        var imported = emptyList<LikedVideoInfo>()
+        dataStore.edit { preferences ->
+            val added = mutableListOf<LikedVideoInfo>()
+            val updated = mutableListOf<LikedVideoInfo>()
+            likes.distinctBy { it.videoId }.forEach { incoming ->
+                when (preferences[likeStateKey(incoming.videoId)]) {
+                    null -> added += incoming
+                    "LIKED" -> {
+                        val key = videoKey(incoming.videoId)
+                        val stored = preferences[key]?.let(::deserializeVideo)
+                        if (stored == null) {
+                            added += incoming
+                        } else {
+                            val merged = stored.mergeAccountImport(incoming)
+                            if (merged != stored) {
+                                preferences[key] = serializeVideo(merged)
+                                updated += merged
+                            }
+                        }
+                    }
+                }
+            }
+            if (added.isNotEmpty()) preferences.insertLikes(added)
+            imported = added + updated
+        }
+        return imported
+    }
+
     private fun MutablePreferences.insertLikes(likes: List<LikedVideoInfo>) {
         val orderPrefKey = orderKey()
         val order = this[orderPrefKey].orEmpty().split(",").filter(String::isNotEmpty)
@@ -271,3 +300,14 @@ data class LikedVideoInfo(
             durationSeconds = durationSeconds.takeIf { it > 0 } ?: stored.durationSeconds,
         )
 }
+
+internal fun LikedVideoInfo.mergeAccountImport(incoming: LikedVideoInfo): LikedVideoInfo =
+    copy(
+        title = incoming.title.ifBlank { title },
+        thumbnail = incoming.thumbnail.ifBlank { thumbnail },
+        channelName = incoming.channelName.ifBlank { channelName },
+        likedAt = likedAt,
+        isMusic = isMusic || incoming.isMusic,
+        channelId = incoming.channelId?.takeIf(String::isNotBlank) ?: channelId,
+        durationSeconds = incoming.durationSeconds.takeIf { it > 0 } ?: durationSeconds,
+    )
