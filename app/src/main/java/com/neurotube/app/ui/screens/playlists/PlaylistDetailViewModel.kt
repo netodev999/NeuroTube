@@ -388,7 +388,7 @@ class PlaylistDetailViewModel
                     errorMessage = null,
                 )
             }
-            likedVideos.getLikedVideosFlow().collect { likes ->
+            likedVideos.getAllLikedVideos().collect { likes ->
                 val videos = likes.map { it.toPlaylistVideo() }
                 _uiState.update { it.copy(videos = videos, thumbnailUrl = videos.firstOrNull()?.thumbnailUrl.orEmpty()) }
                 completeLikeDetails(likes)

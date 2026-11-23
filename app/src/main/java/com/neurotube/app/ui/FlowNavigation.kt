@@ -459,7 +459,8 @@ fun NavGraphBuilder.flowAppGraph(
                     musicPlayerViewModel.loadAndPlayTrack(start.toMusicTrack(), tracks, title)
                     onMusicStarted()
                 } else {
-                    playerViewModel.playPlaylist(videos, index, title, shuffle)
+                    val videoIndex = videos.take(index).count { !it.isMusic }
+                    playerViewModel.playPlaylist(videos.filterNot { it.isMusic }, videoIndex, title, shuffle)
                 }
             },
         )

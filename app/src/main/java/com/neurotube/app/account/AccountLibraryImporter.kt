@@ -308,27 +308,46 @@ class AccountLibraryImport
 
             ImportDiagnostics.record(
                 "likedMusic playlist source incomplete: songs=${playlistSongs.size} expected=$expectedCount " +
-                    "error=${playlistFetch?.error ?: playlistResult.exceptionOrNull()?.let(::describeFailure)}; trying VLLM library",
+                    "error=${playlistFetch?.error ?: playlistResult.exceptionOrNull()?.let(::describeFailure)}; " +
+                    "trying VLLM and legacy liked-videos libraries",
             )
-            val libraryResult = runCatching { fetchLibrary(LIBRARY_LIKED_SONGS_VLLM).filterIsInstance<SongItem>() }
+            val (libraryResult, legacyResult) =
+                coroutineScope {
+                    val vllm =
+                        async {
+                            runCatching { fetchLibrary(LIBRARY_LIKED_SONGS_VLLM).filterIsInstance<SongItem>() }
+                        }
+                    val legacy =
+                        async {
+                            runCatching { fetchLibrary(LIBRARY_LIKED_SONGS_FALLBACK).filterIsInstance<SongItem>() }
+                        }
+                    vllm.await() to legacy.await()
+                }
             val librarySongs = libraryResult.getOrNull().orEmpty()
-            val songs = if (librarySongs.size > playlistSongs.size) librarySongs else playlistSongs
+            val legacySongs = legacyResult.getOrNull().orEmpty()
+            val songs = (playlistSongs + librarySongs + legacySongs).distinctBy { it.id }
+            ImportDiagnostics.record(
+                "likedMusic fallback sources: VLLM=${librarySongs.size} " +
+                    "legacy=${legacySongs.size} union=${songs.size} expected=$expectedCount",
+            )
             val sourceError =
                 when {
                     expectedCount != null && songs.size < expectedCount ->
                         "Only ${songs.size} of $expectedCount liked songs were read"
-                    songs.isEmpty() && playlistResult.isFailure && libraryResult.isFailure ->
-                        "Both liked-song sources failed: ${describeFailure(playlistResult.exceptionOrNull()!!)}; " +
-                            describeFailure(libraryResult.exceptionOrNull()!!)
+                    songs.isEmpty() && playlistResult.isFailure && libraryResult.isFailure && legacyResult.isFailure ->
+                        "All liked-song sources failed: ${describeFailure(playlistResult.exceptionOrNull()!!)}; " +
+                            "${describeFailure(libraryResult.exceptionOrNull()!!)}; " +
+                            describeFailure(legacyResult.exceptionOrNull()!!)
                     songs.isEmpty() && playlistResult.isFailure ->
-                        "The playlist source failed and the VLLM library returned no song rows: " +
+                        "The playlist source failed and the liked-song libraries returned no song rows: " +
                             describeFailure(playlistResult.exceptionOrNull()!!)
-                    songs.isEmpty() && libraryResult.isFailure ->
-                        "The VLLM library source failed and the playlist source returned no song rows: " +
-                            describeFailure(libraryResult.exceptionOrNull()!!)
+                    songs.isEmpty() && libraryResult.isFailure && legacyResult.isFailure ->
+                        "Both liked-song library sources failed and the playlist source returned no song rows: " +
+                            "${describeFailure(libraryResult.exceptionOrNull()!!)}; " +
+                            describeFailure(legacyResult.exceptionOrNull()!!)
                     songs.isEmpty() && expectedCount != null && expectedCount > 0 ->
                         "YouTube reports $expectedCount liked songs but neither source returned a song row"
-                    playlistFetch?.error != null && (libraryResult.isFailure || librarySongs.size < playlistSongs.size) ->
+                    playlistFetch?.error != null && (expectedCount == null || songs.size < expectedCount) ->
                         playlistFetch.error
                     else -> null
                 }
