@@ -36,7 +36,7 @@ private const val AUTO_IMPORT_SETTLE_MS = 2_000L
  * corrected import runs again for an account an earlier, broken one already marked done — without
  * this, a fix reaches no one who has already signed in once.
  */
-private const val ACCOUNT_IMPORT_VERSION = 7
+private const val ACCOUNT_IMPORT_VERSION = 8
 
 /**
  * Owns the account-library import for the whole process: it starts one automatically once an
@@ -155,7 +155,7 @@ class AccountLibraryImportCoordinator
                 }
 
                 _state.value = AccountImportState.Done(report)
-                rememberForAccount?.let { id ->
+                rememberForAccount?.takeIf { report.isClean }?.let { id ->
                     runCatching {
                         preferences.setAccountAutoImportLastAccount(id)
                         preferences.setAccountImportVersion(ACCOUNT_IMPORT_VERSION)

@@ -4,7 +4,6 @@ import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.PermMedia
@@ -27,8 +26,7 @@ internal enum class LibrarySection(
     VIDEO_PLAYLISTS(R.string.library_video_playlists),
     MUSIC_PLAYLISTS(R.string.library_music_playlists),
     WATCH_LATER(R.string.library_watch_later_label),
-    LIKED_VIDEOS(R.string.liked_videos_playlist),
-    LIKED_MUSIC(R.string.liked_music_playlist),
+    LIKED(R.string.library_liked_videos_label),
     DOWNLOADS(R.string.library_downloads_label),
     SAVED_SHORTS(R.string.library_saved_shorts_label),
     LOCAL_MEDIA(R.string.library_local_media_label),
@@ -43,8 +41,7 @@ internal enum class LibrarySection(
                 PLAYLISTS, VIDEO_PLAYLISTS -> Icons.AutoMirrored.Outlined.PlaylistPlay
                 MUSIC_PLAYLISTS -> Icons.Outlined.LibraryMusic
                 WATCH_LATER -> Icons.Outlined.WatchLater
-                LIKED_VIDEOS -> Icons.Outlined.ThumbUp
-                LIKED_MUSIC -> Icons.Outlined.FavoriteBorder
+                LIKED -> Icons.Outlined.ThumbUp
                 DOWNLOADS -> Icons.Outlined.Download
                 SAVED_SHORTS -> ImageVector.vectorResource(R.drawable.ic_shorts)
                 LOCAL_MEDIA -> Icons.Outlined.PermMedia
@@ -94,15 +91,10 @@ internal fun LibrarySection.subtitle(counts: LibraryCounts?): String? =
             }
         }
 
-        LibrarySection.LIKED_VIDEOS -> {
+        LibrarySection.LIKED -> {
             counts?.let {
-                pluralStringResource(R.plurals.videos_count_template, it.likedVideos, it.likedVideos)
-            }
-        }
-
-        LibrarySection.LIKED_MUSIC -> {
-            counts?.let {
-                pluralStringResource(R.plurals.songs_count_template, it.likedMusic, it.likedMusic)
+                val total = it.likedVideos + it.likedMusic
+                pluralStringResource(R.plurals.library_items_count, total, total)
             }
         }
 

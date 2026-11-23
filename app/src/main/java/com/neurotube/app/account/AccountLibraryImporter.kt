@@ -37,15 +37,14 @@ import javax.inject.Singleton
 
 private const val TAG = "AccountLibraryImport"
 
+private const val MAX_CHANNEL_PAGES = 40
+
 /** The music library's browse ids, one per kind of thing a viewer keeps there. */
 private const val LIBRARY_LIKED_SONGS_VLLM = "VLLM"
 private const val LIBRARY_LIKED_SONGS_FALLBACK = "FEmusic_liked_videos"
 private const val LIBRARY_ARTISTS = "FEmusic_library_corpus_artists"
 private const val LIBRARY_PLAYLISTS = "FEmusic_liked_playlists"
 private const val LIBRARY_ALBUMS = "FEmusic_liked_albums"
-
-/** How many channel pages to read before giving up, so a loop can never run forever. */
-private const val MAX_CHANNEL_PAGES = 40
 
 /** How many lookups to run at once. Each collection is a full playlist, so this stays small. */
 private const val PARALLELISM = 3
@@ -145,7 +144,7 @@ class AccountLibraryImport
 
                 onProgress(AccountImportState.Running(AccountImportStep.LIKED_SONGS))
                 val songs = fetchPart(AccountImportStep.LIKED_SONGS, steps) { fetchLikedMusic() }
-                val videoLikes = fetchLikedVideosQuietly()
+                val videoLikes = fetchPart(AccountImportStep.LIKED_SONGS, steps) { fetchLikedVideos(steps) }
                 val now = System.currentTimeMillis()
                 val allLikes = (songs.toLikedSongs(now) + videoLikes.toLikedVideos(now)).distinctBy { it.videoId }
                 if (allLikes.isNotEmpty()) {
@@ -285,22 +284,40 @@ class AccountLibraryImport
             }
 
         private suspend fun fetchLikedMusic(): List<YTItem> {
-            val vllm = runCatching { fetchLibrary(LIBRARY_LIKED_SONGS_VLLM) }.getOrDefault(emptyList())
+            val primary = runCatching { fetchLibrary(LIBRARY_LIKED_SONGS_VLLM) }
+            val vllm = primary.getOrNull().orEmpty()
             if (vllm.isNotEmpty()) return vllm
-            return runCatching { fetchLibrary(LIBRARY_LIKED_SONGS_FALLBACK) }.getOrDefault(emptyList())
+            return runCatching { fetchLibrary(LIBRARY_LIKED_SONGS_FALLBACK) }
+                .getOrElse { fallbackError ->
+                    primary.exceptionOrNull()?.let(fallbackError::addSuppressed)
+                    throw fallbackError
+                }
         }
 
         /** The account's Liked Videos list from youtube.com, paged to the end. */
-        private suspend fun fetchLikedVideosQuietly(): List<Video> =
+        private suspend fun fetchLikedVideos(steps: MutableList<ImportStepDiagnostic>): List<Video> =
             withContext(Dispatchers.IO) {
                 val all = mutableListOf<Video>()
+                val seenContinuations = mutableSetOf<String>()
                 var continuation: String? = null
                 var pages = 0
                 do {
+                    if (continuation != null && !seenContinuations.add(continuation)) {
+                        val error = "Repeated continuation after $pages pages"
+                        ImportDiagnostics.record("likedVideos stopped: $error, items=${all.size}")
+                        steps += ImportStepDiagnostic("LIKED_VIDEOS", all.size, error)
+                        break
+                    }
                     val result = YouTube.likedVideos(continuation)
                     if (result.isFailure) {
                         ImportDiagnostics.record(
-                            "likedVideos page ${pages + 1}: FAILED ${describeFailure(result.exceptionOrNull()!!)}",
+                            "likedVideos page ${pages + 1}: FAILED after items=${all.size}: ${describeFailure(result.exceptionOrNull()!!)}",
+                        )
+                        if (pages == 0) throw result.exceptionOrNull()!!
+                        steps += ImportStepDiagnostic(
+                            "LIKED_VIDEOS",
+                            all.size,
+                            "Page ${pages + 1} failed: ${describeFailure(result.exceptionOrNull()!!)}",
                         )
                         break
                     }
@@ -311,7 +328,10 @@ class AccountLibraryImport
                     all += page.videos
                     continuation = page.continuation
                     pages++
-                } while (continuation != null && pages < MAX_CHANNEL_PAGES)
+                    if (continuation == null && page.videos.isEmpty()) {
+                        ImportDiagnostics.record("likedVideos stopped: empty terminal page after $pages pages, items=${all.size}")
+                    }
+                } while (continuation != null)
 
                 all.distinctBy { it.id }
             }

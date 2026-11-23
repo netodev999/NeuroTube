@@ -144,4 +144,23 @@ class VideoPlaylistPageTest {
         assertThat(page.continuation).isNull()
         assertThat(page.title).isNull()
     }
+
+    @Test
+    fun `a continuation in response endpoints keeps every item and the next token`() {
+        val page =
+            Json
+                .parseToJsonElement(
+                    """
+                    {"onResponseReceivedEndpoints": [{"appendContinuationItemsAction": {"continuationItems": [
+                      ${lockup("vid4", "A live session", "Sound Desk", "UCsound")},
+                      {"continuationItemViewModel": {
+                        "continuationCommand": {"innertubeCommand": {"continuationCommand": {"token": "NEXT-ENDPOINT"}}}
+                      }}
+                    ]}}]}
+                    """,
+                ).toVideoPlaylistPage()
+
+        assertThat(page.videos.map { it.id }).containsExactly("vid4")
+        assertThat(page.continuation).isEqualTo("NEXT-ENDPOINT")
+    }
 }

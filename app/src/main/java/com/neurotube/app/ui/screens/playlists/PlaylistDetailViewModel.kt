@@ -378,7 +378,7 @@ class PlaylistDetailViewModel
         private suspend fun loadLikedVideos() {
             _uiState.update {
                 it.copy(
-                    playlistName = context.getString(R.string.liked_videos_playlist),
+                    playlistName = context.getString(R.string.liked_videos),
                     description = "",
                     isPrivate = true,
                     isLocalPlaylist = true,

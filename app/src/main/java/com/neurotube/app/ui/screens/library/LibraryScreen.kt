@@ -52,7 +52,6 @@ fun LibraryScreen(
     onNavigateToHistory: () -> Unit,
     onNavigateToPlaylists: (MediaKind?) -> Unit,
     onNavigateToLikedVideos: () -> Unit,
-    onNavigateToLikedMusic: () -> Unit,
     onNavigateToWatchLater: () -> Unit,
     onNavigateToSavedShorts: () -> Unit,
     onNavigateToDownloads: () -> Unit,
@@ -132,7 +131,6 @@ fun LibraryScreen(
                     onNavigateToHistory = onNavigateToHistory,
                     onNavigateToPlaylists = onNavigateToPlaylists,
                     onNavigateToLikedVideos = onNavigateToLikedVideos,
-                    onNavigateToLikedMusic = onNavigateToLikedMusic,
                     onNavigateToWatchLater = onNavigateToWatchLater,
                     onNavigateToSavedShorts = onNavigateToSavedShorts,
                     onNavigateToDownloads = onNavigateToDownloads,
@@ -153,8 +151,7 @@ fun LibraryScreen(
                         separatePlaylistKinds = separatePlaylistKinds,
                         onNavigateToHistory = onNavigateToHistory,
                         onNavigateToPlaylists = onNavigateToPlaylists,
-                        onNavigateToLikedVideos = onNavigateToLikedVideos,
-                        onNavigateToLikedMusic = onNavigateToLikedMusic,
+                        onNavigateToLiked = onNavigateToLikedVideos,
                         onNavigateToWatchLater = onNavigateToWatchLater,
                         onNavigateToSavedShorts = onNavigateToSavedShorts,
                         onNavigateToDownloads = onNavigateToDownloads,
@@ -211,7 +208,6 @@ private fun LazyListScope.libraryShelves(
     onNavigateToHistory: () -> Unit,
     onNavigateToPlaylists: (MediaKind?) -> Unit,
     onNavigateToLikedVideos: () -> Unit,
-    onNavigateToLikedMusic: () -> Unit,
     onNavigateToWatchLater: () -> Unit,
     onNavigateToSavedShorts: () -> Unit,
     onNavigateToDownloads: () -> Unit,
@@ -278,20 +274,11 @@ private fun LazyListScope.libraryShelves(
         )
     }
 
-    item(key = "liked-videos", contentType = "video-shelf") {
-        LibraryVideoShelf(
-            section = LibrarySection.LIKED_VIDEOS,
-            videosFlow = viewModel.likedVideos,
-            onTitleClick = onNavigateToLikedVideos,
-            onVideoClick = onVideoClick,
-        )
-    }
-
-    item(key = "liked-music", contentType = "media-shelf") {
+    item(key = "liked", contentType = "media-shelf") {
         LibraryMediaShelfRoute(
-            section = LibrarySection.LIKED_MUSIC,
-            itemsFlow = viewModel.likedMusic,
-            onTitleClick = onNavigateToLikedMusic,
+            section = LibrarySection.LIKED,
+            itemsFlow = viewModel.liked,
+            onTitleClick = onNavigateToLikedVideos,
             onVideoClick = onVideoClick,
             onMusicClick = onMusicClick,
             onDownloadedVideoClick = onDownloadedVideoClick,

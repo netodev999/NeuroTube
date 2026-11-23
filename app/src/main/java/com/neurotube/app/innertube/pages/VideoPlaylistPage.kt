@@ -87,24 +87,33 @@ internal fun JsonElement.toVideoPlaylistPage(): VideoPlaylistPage {
 /** Items of the first page's list, or of a continuation's append action. */
 private fun JsonElement.playlistItems(): List<JsonElement> {
     val root = objectOrNull() ?: return emptyList()
-    root["onResponseReceivedActions"].arrayOrNull()?.let { actions ->
-        return actions.flatMap { action ->
-            action
-                .objectOrNull()
-                ?.get("appendContinuationItemsAction")
-                .objectOrNull()
-                ?.get("continuationItems")
-                .arrayOrNull()
-                .orEmpty()
-        }
+    val continuationItems =
+        listOf("onResponseReceivedActions", "onResponseReceivedCommands", "onResponseReceivedEndpoints")
+            .flatMap { key ->
+                root[key].arrayOrNull().orEmpty().flatMap { entry ->
+                    val action = entry.objectOrNull() ?: return@flatMap emptyList()
+                    listOf("appendContinuationItemsAction", "reloadContinuationItemsCommand")
+                        .mapNotNull { action[it].objectOrNull()?.get("continuationItems")?.arrayOrNull() }
+                        .flatten()
+                }
+            }
+    if (continuationItems.isNotEmpty()) {
+        return continuationItems
     }
     var list: List<JsonElement> = emptyList()
     root["contents"].forEachObject { node ->
         if (list.isNotEmpty()) return@forEachObject
-        val contents = node["itemSectionRenderer"].objectOrNull()?.get("contents").arrayOrNull()
-        if (contents?.any { it.objectOrNull()?.containsKey("lockupViewModel") == true } == true) list = contents
+        val contents =
+            node["itemSectionRenderer"].objectOrNull()?.get("contents").arrayOrNull()
+                ?: node["playlistVideoListRenderer"].objectOrNull()?.get("contents").arrayOrNull()
+        if (contents?.any(JsonElement::isPlaylistVideoItem) == true) list = contents
     }
     return list
+}
+
+private fun JsonElement.isPlaylistVideoItem(): Boolean {
+    val item = objectOrNull() ?: return false
+    return item.containsKey("lockupViewModel") || item.containsKey("videoRenderer")
 }
 
 /** The next-page token, from the older `continuationItemRenderer` or the `continuationItemViewModel` that replaced it. */

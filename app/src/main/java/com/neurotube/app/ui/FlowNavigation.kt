@@ -195,9 +195,6 @@ fun NavGraphBuilder.flowAppGraph(
             onNavigateToLikedVideos = {
                 navController.navigate("playlist/${PlaylistRepository.LIKED_VIDEOS_ID}")
             },
-            onNavigateToLikedMusic = {
-                mediaNavigator.openMusicPlaylist(PlaylistRepository.LIKED_MUSIC_ID)
-            },
             onNavigateToWatchLater = {
                 navController.navigate("playlist/${PlaylistRepository.WATCH_LATER_ID}")
             },

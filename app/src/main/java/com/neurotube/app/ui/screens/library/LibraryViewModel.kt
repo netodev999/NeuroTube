@@ -7,7 +7,6 @@ import com.neurotube.app.data.local.LikedVideosRepository
 import com.neurotube.app.data.local.PlayerPreferences
 import com.neurotube.app.data.local.PlaylistRepository
 import com.neurotube.app.data.local.ViewHistory
-import com.neurotube.app.data.model.toVideo
 import com.neurotube.app.data.notes.NotesRepository
 import com.neurotube.app.data.playlist.sortedFor
 import com.neurotube.app.data.shorts.ShortsContentFilter
@@ -125,23 +124,11 @@ class LibraryViewModel
                 .map { entries -> entries.map { it.toLibraryMediaItem() } }
                 .shared()
 
-        internal val likedVideos =
+        internal val liked =
             allLikes
                 .map { liked ->
                     liked
                         ?.asSequence()
-                        ?.filterNot { it.isMusic }
-                        ?.take(LIBRARY_SHELF_ITEM_LIMIT)
-                        ?.map { it.toVideo() }
-                        ?.toList()
-                }.shared()
-
-        internal val likedMusic =
-            allLikes
-                .map { liked ->
-                    liked
-                        ?.asSequence()
-                        ?.filter { it.isMusic }
                         ?.take(LIBRARY_SHELF_ITEM_LIMIT)
                         ?.map { it.toLibraryMediaItem() }
                         ?.toList()
